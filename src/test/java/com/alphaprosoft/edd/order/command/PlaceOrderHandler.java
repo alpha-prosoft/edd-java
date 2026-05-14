@@ -22,6 +22,12 @@ public final class PlaceOrderHandler implements CommandHandler<PlaceOrderCommand
         }
 
         Money total = product.price().times(cmd.quantity());
-        return HandlerResult.of(new OrderPlacedEvent(cmd.id(), customer.id(), product.id(), cmd.quantity(), total));
+        return HandlerResult.of(OrderPlacedEvent.builder()
+                .id(cmd.id())
+                .customerId(customer.id())
+                .productId(product.id())
+                .quantity(cmd.quantity())
+                .total(total)
+                .build());
     }
 }

@@ -24,43 +24,113 @@ public record OrderAggregate(
     }
 
     public static OrderAggregate placed(OrderAggregate agg, OrderPlacedEvent e) {
-        return new OrderAggregate(
-                e.id(), 1, OrderStatus.PLACED, e.customerId(), e.productId(), e.quantity(), e.total(), null);
+        return OrderAggregate.builder()
+                .id(e.id())
+                .version(1)
+                .status(OrderStatus.PLACED)
+                .customerId(e.customerId())
+                .productId(e.productId())
+                .quantity(e.quantity())
+                .total(e.total())
+                .build();
     }
 
     public static OrderAggregate paid(OrderAggregate agg, PaymentConfirmedEvent event) {
-        return new OrderAggregate(
-                agg.id(),
-                agg.version() + 1,
-                OrderStatus.PAID,
-                agg.customerId(),
-                agg.productId(),
-                agg.quantity(),
-                agg.total(),
-                agg.trackingNumber());
+        return OrderAggregate.builder()
+                .from(agg)
+                .version(agg.version() + 1)
+                .status(OrderStatus.PAID)
+                .build();
     }
 
     public static OrderAggregate cancelled(OrderAggregate agg, OrderCancelledEvent event) {
-        return new OrderAggregate(
-                agg.id(),
-                agg.version() + 1,
-                OrderStatus.CANCELLED,
-                agg.customerId(),
-                agg.productId(),
-                agg.quantity(),
-                agg.total(),
-                agg.trackingNumber());
+        return OrderAggregate.builder()
+                .from(agg)
+                .version(agg.version() + 1)
+                .status(OrderStatus.CANCELLED)
+                .build();
     }
 
     public static OrderAggregate shipped(OrderAggregate agg, OrderShippedEvent e) {
-        return new OrderAggregate(
-                agg.id(),
-                agg.version() + 1,
-                OrderStatus.SHIPPED,
-                agg.customerId(),
-                agg.productId(),
-                agg.quantity(),
-                agg.total(),
-                e.trackingNumber());
+        return OrderAggregate.builder()
+                .from(agg)
+                .version(agg.version() + 1)
+                .status(OrderStatus.SHIPPED)
+                .trackingNumber(e.trackingNumber())
+                .build();
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+
+        private UUID id;
+        private long version;
+        private OrderStatus status;
+        private UUID customerId;
+        private UUID productId;
+        private int quantity;
+        private Money total;
+        private String trackingNumber;
+
+        private Builder() {}
+
+        public Builder from(OrderAggregate a) {
+            this.id = a.id;
+            this.version = a.version;
+            this.status = a.status;
+            this.customerId = a.customerId;
+            this.productId = a.productId;
+            this.quantity = a.quantity;
+            this.total = a.total;
+            this.trackingNumber = a.trackingNumber;
+            return this;
+        }
+
+        public Builder id(UUID id) {
+            this.id = id;
+            return this;
+        }
+
+        public Builder version(long version) {
+            this.version = version;
+            return this;
+        }
+
+        public Builder status(OrderStatus status) {
+            this.status = status;
+            return this;
+        }
+
+        public Builder customerId(UUID customerId) {
+            this.customerId = customerId;
+            return this;
+        }
+
+        public Builder productId(UUID productId) {
+            this.productId = productId;
+            return this;
+        }
+
+        public Builder quantity(int quantity) {
+            this.quantity = quantity;
+            return this;
+        }
+
+        public Builder total(Money total) {
+            this.total = total;
+            return this;
+        }
+
+        public Builder trackingNumber(String trackingNumber) {
+            this.trackingNumber = trackingNumber;
+            return this;
+        }
+
+        public OrderAggregate build() {
+            return new OrderAggregate(id, version, status, customerId, productId, quantity, total, trackingNumber);
+        }
     }
 }

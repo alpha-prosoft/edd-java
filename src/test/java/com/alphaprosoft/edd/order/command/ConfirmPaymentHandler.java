@@ -19,6 +19,9 @@ public final class ConfirmPaymentHandler implements CommandHandler<ConfirmPaymen
         if (cmd.amount().amountCents() != order.total().amountCents()) {
             return HandlerResult.error("amount-mismatch");
         }
-        return HandlerResult.of(new PaymentConfirmedEvent(cmd.orderId(), cmd.amount()));
+        return HandlerResult.of(PaymentConfirmedEvent.builder()
+                .id(cmd.orderId())
+                .amount(cmd.amount())
+                .build());
     }
 }

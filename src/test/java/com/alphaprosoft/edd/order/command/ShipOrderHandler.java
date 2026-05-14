@@ -16,6 +16,9 @@ public final class ShipOrderHandler implements CommandHandler<ShipOrderCommand, 
         if (order.status() != OrderStatus.PAID) {
             return HandlerResult.error("not-paid");
         }
-        return HandlerResult.of(new OrderShippedEvent(cmd.orderId(), cmd.trackingNumber()));
+        return HandlerResult.of(OrderShippedEvent.builder()
+                .id(cmd.orderId())
+                .trackingNumber(cmd.trackingNumber())
+                .build());
     }
 }

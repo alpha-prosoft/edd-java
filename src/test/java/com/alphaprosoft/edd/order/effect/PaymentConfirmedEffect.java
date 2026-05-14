@@ -13,6 +13,10 @@ public final class PaymentConfirmedEffect implements EventFxHandler<PaymentConfi
 
     @Override
     public List<Command> fx(Context ctx, PaymentConfirmedEvent event) {
-        return List.of(new ShipOrderCommand(UUID.randomUUID(), event.id(), "TRACK-" + event.id()));
+        return List.of(ShipOrderCommand.builder()
+                .id(UUID.randomUUID())
+                .orderId(event.id())
+                .trackingNumber("TRACK-" + event.id())
+                .build());
     }
 }

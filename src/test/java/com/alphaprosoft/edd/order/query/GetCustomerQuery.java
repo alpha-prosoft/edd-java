@@ -4,4 +4,30 @@ import java.util.UUID;
 
 import com.alphaprosoft.edd.Query;
 
-public record GetCustomerQuery(UUID id) implements Query {}
+public record GetCustomerQuery(UUID id) implements Query {
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+
+        private UUID id;
+
+        private Builder() {}
+
+        public Builder from(GetCustomerQuery q) {
+            this.id = q.id;
+            return this;
+        }
+
+        public Builder id(UUID id) {
+            this.id = id;
+            return this;
+        }
+
+        public GetCustomerQuery build() {
+            return new GetCustomerQuery(id);
+        }
+    }
+}
