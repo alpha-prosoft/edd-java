@@ -1,5 +1,6 @@
 package com.alphaprosoft.edd;
 
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -7,21 +8,46 @@ import java.util.UUID;
 import java.util.function.BiFunction;
 
 public record CommandSpec<C extends Command, A extends Aggregate>(
-        CommandId<C> id,
+        CommandId<C> commandId,
         Class<A> aggregateType,
-        CommandHandler<C, A> handler,
+        Class<? extends CommandHandler<C, A>> handlerClass,
         List<DepBinding<C, ?, ?>> deps,
-        BiFunction<Context, C, UUID> idFn) {
+        BiFunction<Context, C, UUID> id) {
+
+    private static final ClassValue<Constructor<?>> CTOR_CACHE = new ClassValue<>() {
+        @Override
+        protected Constructor<?> computeValue(Class<?> type) {
+            try {
+                return type.getConstructor();
+            } catch (NoSuchMethodException e) {
+                throw new IllegalArgumentException(type.getName() + " must have a public no-arg constructor", e);
+            }
+        }
+    };
 
     public CommandSpec {
-        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(commandId, "commandId");
         Objects.requireNonNull(aggregateType, "aggregateType");
-        Objects.requireNonNull(handler, "handler");
+        Objects.requireNonNull(handlerClass, "handlerClass");
+        CTOR_CACHE.get(handlerClass);
         deps = deps == null ? List.of() : List.copyOf(deps);
     }
 
-    public static <C extends Command, A extends Aggregate> Init<C, A> builder(CommandId<C> id, Class<A> aggregateType) {
-        return new StagedBuilder<>(id, aggregateType);
+    /** Create a fresh handler instance for one dispatch. */
+    public CommandHandler<C, A> newHandler() {
+        try {
+            @SuppressWarnings("unchecked")
+            Constructor<? extends CommandHandler<C, A>> ctor =
+                    (Constructor<? extends CommandHandler<C, A>>) CTOR_CACHE.get(handlerClass);
+            return ctor.newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to instantiate " + handlerClass.getName(), e);
+        }
+    }
+
+    public static <C extends Command, A extends Aggregate> Init<C, A> builder(
+            CommandId<C> commandId, Class<A> aggregateType) {
+        return new StagedBuilder<>(commandId, aggregateType);
     }
 
     public record DepBinding<C extends Command, Q extends Query, T>(
@@ -29,7 +55,7 @@ public record CommandSpec<C extends Command, A extends Aggregate>(
 
     /** First stage — a handler is required before anything else can be set. */
     public sealed interface Init<C extends Command, A extends Aggregate> permits StagedBuilder {
-        Builder<C, A> handler(CommandHandler<C, A> handler);
+        <H extends CommandHandler<C, A>> Builder<C, A> handler(Class<H> handlerClass);
     }
 
     /**
@@ -40,7 +66,7 @@ public record CommandSpec<C extends Command, A extends Aggregate>(
 
         <Q extends Query, T> Builder<C, A> dep(Dep<Q, T> key, BiFunction<Context, ? super C, Q> queryFn);
 
-        Builder<C, A> idFn(BiFunction<Context, C, UUID> idFn);
+        Builder<C, A> id(BiFunction<Context, C, UUID> id);
 
         CommandSpec<C, A> build();
     }
@@ -48,20 +74,20 @@ public record CommandSpec<C extends Command, A extends Aggregate>(
     private static final class StagedBuilder<C extends Command, A extends Aggregate>
             implements Init<C, A>, Builder<C, A> {
 
-        private final CommandId<C> id;
+        private final CommandId<C> commandId;
         private final Class<A> aggregateType;
-        private CommandHandler<C, A> handler;
+        private Class<? extends CommandHandler<C, A>> handlerClass;
         private final List<DepBinding<C, ?, ?>> deps = new ArrayList<>();
-        private BiFunction<Context, C, UUID> idFn;
+        private BiFunction<Context, C, UUID> id;
 
-        StagedBuilder(CommandId<C> id, Class<A> aggregateType) {
-            this.id = id;
+        StagedBuilder(CommandId<C> commandId, Class<A> aggregateType) {
+            this.commandId = commandId;
             this.aggregateType = aggregateType;
         }
 
         @Override
-        public Builder<C, A> handler(CommandHandler<C, A> handler) {
-            this.handler = handler;
+        public <H extends CommandHandler<C, A>> Builder<C, A> handler(Class<H> handlerClass) {
+            this.handlerClass = handlerClass;
             return this;
         }
 
@@ -72,14 +98,14 @@ public record CommandSpec<C extends Command, A extends Aggregate>(
         }
 
         @Override
-        public Builder<C, A> idFn(BiFunction<Context, C, UUID> idFn) {
-            this.idFn = idFn;
+        public Builder<C, A> id(BiFunction<Context, C, UUID> id) {
+            this.id = id;
             return this;
         }
 
         @Override
         public CommandSpec<C, A> build() {
-            return new CommandSpec<>(id, aggregateType, handler, deps, idFn);
+            return new CommandSpec<>(commandId, aggregateType, handlerClass, deps, id);
         }
     }
 }

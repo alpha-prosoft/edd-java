@@ -18,27 +18,27 @@ public final class OrderModule {
     public static Module<OrderAggregate> register(Module<OrderAggregate> m) {
         return m.regCmd(
                         OrderIds.PLACE_ORDER,
-                        spec -> spec.handler(new PlaceOrderHandler())
+                        spec -> spec.handler(PlaceOrderHandler.class)
                                 .dep(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
                                 .dep(OrderDeps.PRODUCT, (_, cmd) -> new GetProductQuery(cmd.productId()))
                                 .build())
                 .regCmd(
                         OrderIds.CONFIRM_PAYMENT,
-                        spec -> spec.handler(new ConfirmPaymentHandler())
+                        spec -> spec.handler(ConfirmPaymentHandler.class)
                                 .dep(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
-                                .idFn((_, cmd) -> cmd.orderId())
+                                .id((_, cmd) -> cmd.orderId())
                                 .build())
                 .regCmd(
                         OrderIds.CANCEL_ORDER,
-                        spec -> spec.handler(new CancelOrderHandler())
+                        spec -> spec.handler(CancelOrderHandler.class)
                                 .dep(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
-                                .idFn((_, cmd) -> cmd.orderId())
+                                .id((_, cmd) -> cmd.orderId())
                                 .build())
                 .regCmd(
                         OrderIds.SHIP_ORDER,
-                        spec -> spec.handler(new ShipOrderHandler())
+                        spec -> spec.handler(ShipOrderHandler.class)
                                 .dep(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
-                                .idFn((_, cmd) -> cmd.orderId())
+                                .id((_, cmd) -> cmd.orderId())
                                 .build())
                 .regEvent(OrderIds.ORDER_PLACED, OrderModule::apply)
                 .regEvent(OrderIds.PAYMENT_CONFIRMED, OrderModule::apply)

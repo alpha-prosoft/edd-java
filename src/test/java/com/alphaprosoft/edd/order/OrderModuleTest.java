@@ -116,7 +116,7 @@ class OrderModuleTest {
                 new ConfirmPaymentCommand(UUID.randomUUID(), orderId, Money.usd(2000)), RequestMeta.newRequest());
 
         var success = assertInstanceOf(CommandResponse.Success.class, resp);
-        assertEquals(orderId, success.aggregateId(), "idFn should map command id to orderId");
+        assertEquals(orderId, success.aggregateId(), "id fn should map command id to orderId");
         var confirmed =
                 assertInstanceOf(PaymentConfirmedEvent.class, success.events().getFirst());
         assertEquals(orderId, confirmed.id());

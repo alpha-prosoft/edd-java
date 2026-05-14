@@ -70,13 +70,13 @@ public final class Application {
             resolved.put(binding.key().name(), resolveDep(binding, ctx, cmd, meta));
         }
 
-        UUID aggregateId = spec.idFn() != null ? spec.idFn().apply(ctx, cmd) : null;
+        UUID aggregateId = spec.id() != null ? spec.id().apply(ctx, cmd) : null;
         if (aggregateId == null) {
             aggregateId = cmd.id();
         }
 
         UUID finalAggregateId = aggregateId;
-        HandlerResult<A> result = spec.handler().handle(ctx, cmd);
+        HandlerResult<A> result = spec.newHandler().handle(ctx, cmd);
         return switch (result) {
             case HandlerResult.Events<A>(List<Event> es) ->
                 new CommandResponse.Success(finalAggregateId, es, runFx(ctx, es));
@@ -133,7 +133,8 @@ public final class Application {
             for (CommandSpec.DepBinding<?, ?, ?> binding : spec.deps()) {
                 Dep<?, ?> dep = binding.key();
                 if (!dep.isRemote() && !queries.containsKey(dep.queryId())) {
-                    throw new IllegalStateException("Command " + spec.id() + " depends on local query " + dep.queryId()
+                    throw new IllegalStateException("Command " + spec.commandId() + " depends on local query "
+                            + dep.queryId()
                             + " which has no registered handler");
                 }
             }
@@ -161,8 +162,8 @@ public final class Application {
         }
 
         public <C extends Command, A extends Aggregate> Builder regCmd(CommandSpec<C, A> spec) {
-            if (commands.putIfAbsent(spec.id(), spec) != null) {
-                throw new IllegalStateException("Duplicate command registration: " + spec.id());
+            if (commands.putIfAbsent(spec.commandId(), spec) != null) {
+                throw new IllegalStateException("Duplicate command registration: " + spec.commandId());
             }
             return this;
         }
