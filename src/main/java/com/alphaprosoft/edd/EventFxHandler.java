@@ -4,5 +4,5 @@ import java.util.List;
 
 @FunctionalInterface
 public interface EventFxHandler<E extends Event> {
-    List<CommandEnvelope<?>> fx(Context ctx, E event);
+    List<Command> fx(Context ctx, E event);
 }

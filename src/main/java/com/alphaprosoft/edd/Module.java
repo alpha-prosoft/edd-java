@@ -23,13 +23,13 @@ public final class Module<A extends Aggregate> {
         return this;
     }
 
-    public <E extends Event> Module<A> regEvent(EventId<E> id, EventHandler<E, A> handler) {
-        app.regEvent(id, aggregateType, handler);
+    public <E extends Event> Module<A> regApply(EventId<E> id, EventHandler<E, A> handler) {
+        app.regApply(id, aggregateType, handler);
         return this;
     }
 
-    public <E extends Event> Module<A> regEventFx(EventId<E> id, EventFxHandler<E> handler) {
-        app.regEventFx(id, handler);
+    public <E extends Event> Module<A> regFx(EventId<E> id, EventFxHandler<E> handler) {
+        app.regFx(id, handler);
         return this;
     }
 

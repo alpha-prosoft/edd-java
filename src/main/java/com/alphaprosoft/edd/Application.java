@@ -15,7 +15,6 @@ public final class Application {
     private final Map<EventId<?>, RegisteredEvent<?, ?>> events;
     private final Map<EventId<?>, List<EventFxHandler<?>>> eventFx;
     private final Map<QueryId<?, ?>, RegisteredQuery<?, ?>> queries;
-    private final RemoteResolver remoteResolver;
 
     private Application(Builder b) {
         this.serviceName = b.serviceName;
@@ -23,7 +22,6 @@ public final class Application {
         this.events = Map.copyOf(b.events);
         this.eventFx = Map.copyOf(b.eventFx);
         this.queries = Map.copyOf(b.queries);
-        this.remoteResolver = b.remoteResolver;
         validateLocalDeps();
     }
 
@@ -87,15 +85,11 @@ public final class Application {
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Object resolveDep(CommandSpec.DepBinding<?, ?, ?> binding, Context ctx, Object cmd, RequestMeta meta) {
         Query q = (Query) ((BiFunction) binding.queryFn()).apply(ctx, cmd);
-        Dep<?, ?> dep = binding.key();
-        if (dep.isRemote()) {
-            return remoteResolver.resolve(dep.service(), q);
-        }
         return queryByType(q, meta);
     }
 
-    private List<CommandEnvelope<?>> runFx(Context ctx, List<Event> events) {
-        List<CommandEnvelope<?>> all = new ArrayList<>();
+    private List<Command> runFx(Context ctx, List<Event> events) {
+        List<Command> all = new ArrayList<>();
         for (Event event : events) {
             @SuppressWarnings("unchecked")
             Class<Event> eClass = (Class<Event>) event.getClass();
@@ -112,7 +106,7 @@ public final class Application {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private List<CommandEnvelope<?>> invokeFx(EventFxHandler<?> handler, Context ctx, Event event) {
+    private List<Command> invokeFx(EventFxHandler<?> handler, Context ctx, Event event) {
         return ((EventFxHandler) handler).fx(ctx, event);
     }
 
@@ -131,9 +125,8 @@ public final class Application {
         for (CommandSpec<?, ?> spec : commands.values()) {
             for (CommandSpec.DepBinding<?, ?, ?> binding : spec.deps()) {
                 Dep<?, ?> dep = binding.key();
-                if (!dep.isRemote() && !queries.containsKey(dep.queryId())) {
-                    throw new IllegalStateException("Command " + spec.commandId() + " depends on local query "
-                            + dep.queryId()
+                if (!queries.containsKey(dep.queryId())) {
+                    throw new IllegalStateException("Command " + spec.commandId() + " depends on query " + dep.queryId()
                             + " which has no registered handler");
                 }
             }
@@ -152,9 +145,6 @@ public final class Application {
         private final Map<EventId<?>, RegisteredEvent<?, ?>> events = new LinkedHashMap<>();
         private final Map<EventId<?>, List<EventFxHandler<?>>> eventFx = new LinkedHashMap<>();
         private final Map<QueryId<?, ?>, RegisteredQuery<?, ?>> queries = new LinkedHashMap<>();
-        private RemoteResolver remoteResolver = (svc, query) -> {
-            throw new UnsupportedOperationException("No RemoteResolver configured (service=" + svc + ")");
-        };
 
         private Builder(String serviceName) {
             this.serviceName = serviceName;
@@ -167,15 +157,15 @@ public final class Application {
             return this;
         }
 
-        public <E extends Event, A extends Aggregate> Builder regEvent(
+        public <E extends Event, A extends Aggregate> Builder regApply(
                 EventId<E> id, Class<A> aggregateType, EventHandler<E, A> handler) {
             if (events.putIfAbsent(id, new RegisteredEvent<>(id, aggregateType, handler)) != null) {
-                throw new IllegalStateException("Duplicate event registration: " + id);
+                throw new IllegalStateException("Duplicate apply registration: " + id);
             }
             return this;
         }
 
-        public <E extends Event> Builder regEventFx(EventId<E> id, EventFxHandler<E> handler) {
+        public <E extends Event> Builder regFx(EventId<E> id, EventFxHandler<E> handler) {
             eventFx.computeIfAbsent(id, k -> new ArrayList<>()).add(handler);
             return this;
         }
@@ -184,11 +174,6 @@ public final class Application {
             if (queries.putIfAbsent(id, new RegisteredQuery<>(id, handler)) != null) {
                 throw new IllegalStateException("Duplicate query registration: " + id);
             }
-            return this;
-        }
-
-        public Builder remoteResolver(RemoteResolver resolver) {
-            this.remoteResolver = resolver;
             return this;
         }
 

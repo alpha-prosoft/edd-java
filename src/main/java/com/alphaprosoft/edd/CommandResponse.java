@@ -6,7 +6,7 @@ import java.util.UUID;
 
 public sealed interface CommandResponse {
 
-    record Success(UUID aggregateId, List<Event> events, List<CommandEnvelope<?>> effects) implements CommandResponse {
+    record Success(UUID aggregateId, List<Event> events, List<Command> effects) implements CommandResponse {
         public Success {
             events = List.copyOf(events);
             effects = List.copyOf(effects);

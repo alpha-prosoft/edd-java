@@ -2,7 +2,6 @@ package com.alphaprosoft.edd.order;
 
 import com.alphaprosoft.edd.CommandId;
 import com.alphaprosoft.edd.EventId;
-import com.alphaprosoft.edd.QueryId;
 import com.alphaprosoft.edd.order.command.CancelOrderCommand;
 import com.alphaprosoft.edd.order.command.ConfirmPaymentCommand;
 import com.alphaprosoft.edd.order.command.PlaceOrderCommand;
@@ -11,11 +10,8 @@ import com.alphaprosoft.edd.order.event.OrderCancelledEvent;
 import com.alphaprosoft.edd.order.event.OrderPlacedEvent;
 import com.alphaprosoft.edd.order.event.OrderShippedEvent;
 import com.alphaprosoft.edd.order.event.PaymentConfirmedEvent;
-import com.alphaprosoft.edd.order.query.GetCustomerQuery;
-import com.alphaprosoft.edd.order.query.GetOrderQuery;
-import com.alphaprosoft.edd.order.query.GetProductQuery;
 
-public final class OrderIds {
+public final class CommandRegistry {
 
     public static final CommandId<PlaceOrderCommand> PLACE_ORDER = CommandId.of("place-order", PlaceOrderCommand.class);
     public static final CommandId<ConfirmPaymentCommand> CONFIRM_PAYMENT =
@@ -31,12 +27,5 @@ public final class OrderIds {
             EventId.of("order-cancelled", OrderCancelledEvent.class);
     public static final EventId<OrderShippedEvent> ORDER_SHIPPED = EventId.of("order-shipped", OrderShippedEvent.class);
 
-    public static final QueryId<GetOrderQuery, OrderAggregate> GET_ORDER =
-            QueryId.of("get-order", GetOrderQuery.class, OrderAggregate.class);
-    public static final QueryId<GetCustomerQuery, Customer> GET_CUSTOMER =
-            QueryId.of("get-customer", GetCustomerQuery.class, Customer.class);
-    public static final QueryId<GetProductQuery, Product> GET_PRODUCT =
-            QueryId.of("get-product", GetProductQuery.class, Product.class);
-
-    private OrderIds() {}
+    private CommandRegistry() {}
 }
