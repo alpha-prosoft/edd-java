@@ -10,6 +10,10 @@ public record CancelOrderCommand(UUID id, UUID orderId, String reason) implement
         return new Builder();
     }
 
+    public static Builder builder(CancelOrderCommand existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -18,11 +22,10 @@ public record CancelOrderCommand(UUID id, UUID orderId, String reason) implement
 
         private Builder() {}
 
-        public Builder from(CancelOrderCommand c) {
+        private Builder(CancelOrderCommand c) {
             this.id = c.id;
             this.orderId = c.orderId;
             this.reason = c.reason;
-            return this;
         }
 
         public Builder id(UUID id) {

@@ -10,6 +10,10 @@ public record PaymentConfirmedEvent(UUID id, Money amount) implements OrderEvent
         return new Builder();
     }
 
+    public static Builder builder(PaymentConfirmedEvent existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -17,10 +21,9 @@ public record PaymentConfirmedEvent(UUID id, Money amount) implements OrderEvent
 
         private Builder() {}
 
-        public Builder from(PaymentConfirmedEvent e) {
+        private Builder(PaymentConfirmedEvent e) {
             this.id = e.id;
             this.amount = e.amount;
-            return this;
         }
 
         public Builder id(UUID id) {

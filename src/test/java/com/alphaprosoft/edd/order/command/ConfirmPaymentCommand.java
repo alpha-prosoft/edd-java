@@ -11,6 +11,10 @@ public record ConfirmPaymentCommand(UUID id, UUID orderId, Money amount) impleme
         return new Builder();
     }
 
+    public static Builder builder(ConfirmPaymentCommand existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -19,11 +23,10 @@ public record ConfirmPaymentCommand(UUID id, UUID orderId, Money amount) impleme
 
         private Builder() {}
 
-        public Builder from(ConfirmPaymentCommand c) {
+        private Builder(ConfirmPaymentCommand c) {
             this.id = c.id;
             this.orderId = c.orderId;
             this.amount = c.amount;
-            return this;
         }
 
         public Builder id(UUID id) {

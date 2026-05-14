@@ -10,15 +10,18 @@ public record GetOrderQuery(UUID id) implements Query {
         return new Builder();
     }
 
+    public static Builder builder(GetOrderQuery existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
 
         private Builder() {}
 
-        public Builder from(GetOrderQuery q) {
+        private Builder(GetOrderQuery q) {
             this.id = q.id;
-            return this;
         }
 
         public Builder id(UUID id) {

@@ -20,12 +20,11 @@ public record OrderAggregate(
         implements Aggregate {
 
     public static OrderAggregate initial(UUID id) {
-        return new OrderAggregate(id, 0, OrderStatus.NEW, null, null, 0, null, null);
+        return OrderAggregate.builder().id(id).status(OrderStatus.NEW).build();
     }
 
     public static OrderAggregate placed(OrderAggregate agg, OrderPlacedEvent e) {
-        return OrderAggregate.builder()
-                .from(agg)
+        return OrderAggregate.builder(agg)
                 .id(e.id())
                 .version(agg.version() + 1)
                 .status(OrderStatus.PLACED)
@@ -37,24 +36,21 @@ public record OrderAggregate(
     }
 
     public static OrderAggregate paid(OrderAggregate agg, PaymentConfirmedEvent event) {
-        return OrderAggregate.builder()
-                .from(agg)
+        return OrderAggregate.builder(agg)
                 .version(agg.version() + 1)
                 .status(OrderStatus.PAID)
                 .build();
     }
 
     public static OrderAggregate cancelled(OrderAggregate agg, OrderCancelledEvent event) {
-        return OrderAggregate.builder()
-                .from(agg)
+        return OrderAggregate.builder(agg)
                 .version(agg.version() + 1)
                 .status(OrderStatus.CANCELLED)
                 .build();
     }
 
     public static OrderAggregate shipped(OrderAggregate agg, OrderShippedEvent e) {
-        return OrderAggregate.builder()
-                .from(agg)
+        return OrderAggregate.builder(agg)
                 .version(agg.version() + 1)
                 .status(OrderStatus.SHIPPED)
                 .trackingNumber(e.trackingNumber())
@@ -63,6 +59,10 @@ public record OrderAggregate(
 
     public static Builder builder() {
         return new Builder();
+    }
+
+    public static Builder builder(OrderAggregate existing) {
+        return new Builder(existing);
     }
 
     public static final class Builder {
@@ -78,7 +78,7 @@ public record OrderAggregate(
 
         private Builder() {}
 
-        public Builder from(OrderAggregate a) {
+        private Builder(OrderAggregate a) {
             this.id = a.id;
             this.version = a.version;
             this.status = a.status;
@@ -87,7 +87,6 @@ public record OrderAggregate(
             this.quantity = a.quantity;
             this.total = a.total;
             this.trackingNumber = a.trackingNumber;
-            return this;
         }
 
         public Builder id(UUID id) {

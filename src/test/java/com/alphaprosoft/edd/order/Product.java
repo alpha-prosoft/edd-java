@@ -8,6 +8,10 @@ public record Product(UUID id, String name, Money price, int stock) {
         return new Builder();
     }
 
+    public static Builder builder(Product existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -17,12 +21,11 @@ public record Product(UUID id, String name, Money price, int stock) {
 
         private Builder() {}
 
-        public Builder from(Product p) {
+        private Builder(Product p) {
             this.id = p.id;
             this.name = p.name;
             this.price = p.price;
             this.stock = p.stock;
-            return this;
         }
 
         public Builder id(UUID id) {

@@ -10,6 +10,10 @@ public record ShipOrderCommand(UUID id, UUID orderId, String trackingNumber) imp
         return new Builder();
     }
 
+    public static Builder builder(ShipOrderCommand existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -18,11 +22,10 @@ public record ShipOrderCommand(UUID id, UUID orderId, String trackingNumber) imp
 
         private Builder() {}
 
-        public Builder from(ShipOrderCommand c) {
+        private Builder(ShipOrderCommand c) {
             this.id = c.id;
             this.orderId = c.orderId;
             this.trackingNumber = c.trackingNumber;
-            return this;
         }
 
         public Builder id(UUID id) {

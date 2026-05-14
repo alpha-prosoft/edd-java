@@ -14,6 +14,10 @@ public record Customer(UUID id, String name, Tier tier) {
         return new Builder();
     }
 
+    public static Builder builder(Customer existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -22,11 +26,10 @@ public record Customer(UUID id, String name, Tier tier) {
 
         private Builder() {}
 
-        public Builder from(Customer c) {
+        private Builder(Customer c) {
             this.id = c.id;
             this.name = c.name;
             this.tier = c.tier;
-            return this;
         }
 
         public Builder id(UUID id) {

@@ -11,6 +11,10 @@ public record OrderPlacedEvent(UUID id, UUID customerId, UUID productId, int qua
         return new Builder();
     }
 
+    public static Builder builder(OrderPlacedEvent existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -21,13 +25,12 @@ public record OrderPlacedEvent(UUID id, UUID customerId, UUID productId, int qua
 
         private Builder() {}
 
-        public Builder from(OrderPlacedEvent e) {
+        private Builder(OrderPlacedEvent e) {
             this.id = e.id;
             this.customerId = e.customerId;
             this.productId = e.productId;
             this.quantity = e.quantity;
             this.total = e.total;
-            return this;
         }
 
         public Builder id(UUID id) {

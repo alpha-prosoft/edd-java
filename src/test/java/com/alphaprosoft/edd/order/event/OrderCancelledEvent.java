@@ -8,6 +8,10 @@ public record OrderCancelledEvent(UUID id, String reason) implements OrderEvent 
         return new Builder();
     }
 
+    public static Builder builder(OrderCancelledEvent existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -15,10 +19,9 @@ public record OrderCancelledEvent(UUID id, String reason) implements OrderEvent 
 
         private Builder() {}
 
-        public Builder from(OrderCancelledEvent e) {
+        private Builder(OrderCancelledEvent e) {
             this.id = e.id;
             this.reason = e.reason;
-            return this;
         }
 
         public Builder id(UUID id) {

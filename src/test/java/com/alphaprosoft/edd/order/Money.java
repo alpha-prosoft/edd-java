@@ -14,6 +14,10 @@ public record Money(long amountCents, String currency) {
         return new Builder();
     }
 
+    public static Builder builder(Money existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private long amountCents;
@@ -21,10 +25,9 @@ public record Money(long amountCents, String currency) {
 
         private Builder() {}
 
-        public Builder from(Money m) {
+        private Builder(Money m) {
             this.amountCents = m.amountCents;
             this.currency = m.currency;
-            return this;
         }
 
         public Builder amountCents(long amountCents) {

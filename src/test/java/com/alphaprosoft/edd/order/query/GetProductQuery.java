@@ -10,15 +10,18 @@ public record GetProductQuery(UUID id) implements Query {
         return new Builder();
     }
 
+    public static Builder builder(GetProductQuery existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
 
         private Builder() {}
 
-        public Builder from(GetProductQuery q) {
+        private Builder(GetProductQuery q) {
             this.id = q.id;
-            return this;
         }
 
         public Builder id(UUID id) {

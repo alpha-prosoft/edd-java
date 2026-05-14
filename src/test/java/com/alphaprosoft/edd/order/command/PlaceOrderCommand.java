@@ -10,6 +10,10 @@ public record PlaceOrderCommand(UUID id, UUID customerId, UUID productId, int qu
         return new Builder();
     }
 
+    public static Builder builder(PlaceOrderCommand existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -19,12 +23,11 @@ public record PlaceOrderCommand(UUID id, UUID customerId, UUID productId, int qu
 
         private Builder() {}
 
-        public Builder from(PlaceOrderCommand c) {
+        private Builder(PlaceOrderCommand c) {
             this.id = c.id;
             this.customerId = c.customerId;
             this.productId = c.productId;
             this.quantity = c.quantity;
-            return this;
         }
 
         public Builder id(UUID id) {

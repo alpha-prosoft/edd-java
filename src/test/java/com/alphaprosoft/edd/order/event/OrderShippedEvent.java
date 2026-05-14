@@ -8,6 +8,10 @@ public record OrderShippedEvent(UUID id, String trackingNumber) implements Order
         return new Builder();
     }
 
+    public static Builder builder(OrderShippedEvent existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private UUID id;
@@ -15,10 +19,9 @@ public record OrderShippedEvent(UUID id, String trackingNumber) implements Order
 
         private Builder() {}
 
-        public Builder from(OrderShippedEvent e) {
+        private Builder(OrderShippedEvent e) {
             this.id = e.id;
             this.trackingNumber = e.trackingNumber;
-            return this;
         }
 
         public Builder id(UUID id) {

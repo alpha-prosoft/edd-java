@@ -39,8 +39,11 @@ The full working example lives under `src/test/java/com/alphaprosoft/edd/order/`
 ## 1. Domain types
 
 Plain Java records — no framework dependency.
-Each record has a fluent **builder** with a `.from(...)` method so you can
-copy-then-modify any field.
+Each record has two builder factories:
+
+- `Record.builder()` — empty builder, every field starts at its default.
+- `Record.builder(existing)` — pre-populated from an existing instance,
+  so you can override only the fields you want to change.
 
 ```java
 public record Money(long amountCents, String currency) {
@@ -57,6 +60,10 @@ public record Money(long amountCents, String currency) {
         return new Builder();
     }
 
+    public static Builder builder(Money existing) {
+        return new Builder(existing);
+    }
+
     public static final class Builder {
 
         private long amountCents;
@@ -64,10 +71,9 @@ public record Money(long amountCents, String currency) {
 
         private Builder() {}
 
-        public Builder from(Money m) {
+        private Builder(Money m) {
             this.amountCents = m.amountCents;
             this.currency = m.currency;
-            return this;
         }
 
         public Builder amountCents(long amountCents) {
@@ -89,7 +95,7 @@ public record Money(long amountCents, String currency) {
 
 `Customer`, `Product`, and the `OrderStatus` enum follow the same pattern.
 Every other record in this guide (commands, events, queries, the aggregate)
-has the same `builder()` + `.from(...)` shape.
+has the same `builder()` / `builder(existing)` pair.
 
 ## 2. Events
 
@@ -124,7 +130,7 @@ A record + **one static apply method per event**.
 Each method has the shape `(A agg, E event) -> A`, matching `EventHandler<E, A>`,
 so the framework can use them as method references in step 11.
 
-Every apply method uses `builder().from(agg)` and only spells out the fields it changes:
+Every apply method uses `builder(agg)` and only spells out the fields it changes:
 
 ```java
 public record OrderAggregate(
@@ -146,8 +152,7 @@ public record OrderAggregate(
     }
 
     public static OrderAggregate placed(OrderAggregate agg, OrderPlacedEvent e) {
-        return OrderAggregate.builder()
-                .from(agg)
+        return OrderAggregate.builder(agg)
                 .id(e.id())
                 .version(agg.version() + 1)
                 .status(OrderStatus.PLACED)
@@ -159,24 +164,21 @@ public record OrderAggregate(
     }
 
     public static OrderAggregate paid(OrderAggregate agg, PaymentConfirmedEvent event) {
-        return OrderAggregate.builder()
-                .from(agg)
+        return OrderAggregate.builder(agg)
                 .version(agg.version() + 1)
                 .status(OrderStatus.PAID)
                 .build();
     }
 
     public static OrderAggregate cancelled(OrderAggregate agg, OrderCancelledEvent event) {
-        return OrderAggregate.builder()
-                .from(agg)
+        return OrderAggregate.builder(agg)
                 .version(agg.version() + 1)
                 .status(OrderStatus.CANCELLED)
                 .build();
     }
 
     public static OrderAggregate shipped(OrderAggregate agg, OrderShippedEvent e) {
-        return OrderAggregate.builder()
-                .from(agg)
+        return OrderAggregate.builder(agg)
                 .version(agg.version() + 1)
                 .status(OrderStatus.SHIPPED)
                 .trackingNumber(e.trackingNumber())
@@ -187,7 +189,7 @@ public record OrderAggregate(
 }
 ```
 
-`.from(agg)` copies every field, then the chained setters override exactly the ones the event changes.
+`builder(agg)` copies every field, then the chained setters override only the ones the event changes.
 No more eight-argument constructor calls with seven fields unchanged.
 
 ## 4. Commands
@@ -563,7 +565,7 @@ stateDiagram-v2
 - [x] `Module<A>` — aggregate type pinned once
 - [x] `regApply(EVENT_ID, …)` — one apply function per event
 - [x] `regFx(EVENT_ID, …)` — effects return `List<Command>`
-- [x] Fluent builders with `.from(record)` on every example record
+- [x] Fluent builders on every example record (`builder()` + `builder(existing)`)
 - [x] Sealed `HandlerResult` and `CommandResponse`
 - [x] Build-time validation: missing query handler ⇒ `Application.build()` fails
 
