@@ -25,8 +25,9 @@ public record OrderAggregate(
 
     public static OrderAggregate placed(OrderAggregate agg, OrderPlacedEvent e) {
         return OrderAggregate.builder()
+                .from(agg)
                 .id(e.id())
-                .version(1)
+                .version(agg.version() + 1)
                 .status(OrderStatus.PLACED)
                 .customerId(e.customerId())
                 .productId(e.productId())
