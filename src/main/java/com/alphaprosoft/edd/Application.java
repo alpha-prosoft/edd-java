@@ -56,7 +56,7 @@ public final class Application {
         }
         @SuppressWarnings("unchecked")
         RegisteredQuery<Q, R> reg = (RegisteredQuery<Q, R>) raw;
-        Context ctx = new ContextImpl(new HashMap<>(), meta.requestId(), meta.interactionId());
+        Context ctx = new ContextImpl(Map.of(), meta.requestId(), meta.interactionId());
         return reg.handler().handle(ctx, query);
     }
 
@@ -64,35 +64,33 @@ public final class Application {
             CommandSpec<C, A> spec, C cmd, RequestMeta meta) {
 
         Map<String, Object> resolved = new LinkedHashMap<>();
-        for (Deps.Registered<C, ?, ?> reg : spec.deps().all()) {
-            Context partial = new ContextImpl(resolved, meta.requestId(), meta.interactionId());
-            Object result = resolveDep(reg, partial, cmd, meta);
-            resolved.put(reg.key().name(), result);
-        }
-
         Context ctx = new ContextImpl(resolved, meta.requestId(), meta.interactionId());
 
-        UUID resolvedId = spec.idFn().map(fn -> fn.apply(ctx, cmd)).orElse(cmd.id());
-        if (resolvedId == null) {
-            resolvedId = cmd.id();
+        for (CommandSpec.DepBinding<C, ?, ?> binding : spec.deps()) {
+            resolved.put(binding.key().name(), resolveDep(binding, ctx, cmd, meta));
         }
 
+        UUID aggregateId = spec.idFn() != null ? spec.idFn().apply(ctx, cmd) : null;
+        if (aggregateId == null) {
+            aggregateId = cmd.id();
+        }
+
+        UUID finalAggregateId = aggregateId;
         HandlerResult<A> result = spec.handler().handle(ctx, cmd);
         return switch (result) {
-            case HandlerResult.Events<A> e -> {
-                List<CommandEnvelope<?>> fxOut = runFx(ctx, e.events());
-                yield new CommandResponse.Success(e.events(), fxOut);
-            }
-            case HandlerResult.Error<A> err -> new CommandResponse.Failure(err.code(), err.details());
+            case HandlerResult.Events<A>(List<Event> es) ->
+                new CommandResponse.Success(finalAggregateId, es, runFx(ctx, es));
+            case HandlerResult.Error<A>(String code, Map<String, Object> details) ->
+                new CommandResponse.Failure(code, details);
         };
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private Object resolveDep(Deps.Registered<?, ?, ?> reg, Context ctx, Object cmd, RequestMeta meta) {
-        Query q = (Query) ((BiFunction) reg.queryFn()).apply(ctx, cmd);
-        Dep<?, ?> dep = reg.key();
-        if (dep.service().isPresent()) {
-            return remoteResolver.resolve(dep.service().get(), q);
+    private Object resolveDep(CommandSpec.DepBinding<?, ?, ?> binding, Context ctx, Object cmd, RequestMeta meta) {
+        Query q = (Query) ((BiFunction) binding.queryFn()).apply(ctx, cmd);
+        Dep<?, ?> dep = binding.key();
+        if (dep.isRemote()) {
+            return remoteResolver.resolve(dep.service(), q);
         }
         return queryByType(q, meta);
     }
@@ -132,9 +130,9 @@ public final class Application {
 
     private void validateLocalDeps() {
         for (CommandSpec<?, ?> spec : commands.values()) {
-            for (Deps.Registered<?, ?, ?> reg : spec.deps().all()) {
-                Dep<?, ?> dep = reg.key();
-                if (dep.service().isEmpty() && !queries.containsKey(dep.queryId())) {
+            for (CommandSpec.DepBinding<?, ?, ?> binding : spec.deps()) {
+                Dep<?, ?> dep = binding.key();
+                if (!dep.isRemote() && !queries.containsKey(dep.queryId())) {
                     throw new IllegalStateException("Command " + spec.id() + " depends on local query " + dep.queryId()
                             + " which has no registered handler");
                 }

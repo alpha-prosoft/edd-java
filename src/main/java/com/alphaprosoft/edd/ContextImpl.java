@@ -3,17 +3,7 @@ package com.alphaprosoft.edd;
 import java.util.Map;
 import java.util.UUID;
 
-final class ContextImpl implements Context {
-
-    private final Map<String, Object> deps;
-    private final UUID requestId;
-    private final UUID interactionId;
-
-    ContextImpl(Map<String, Object> deps, UUID requestId, UUID interactionId) {
-        this.deps = deps;
-        this.requestId = requestId;
-        this.interactionId = interactionId;
-    }
+record ContextImpl(Map<String, Object> deps, UUID requestId, UUID interactionId) implements Context {
 
     @Override
     public <T> T get(Dep<?, T> key) {
@@ -28,15 +18,5 @@ final class ContextImpl implements Context {
     @Override
     public boolean has(Dep<?, ?> key) {
         return deps.containsKey(key.name());
-    }
-
-    @Override
-    public UUID requestId() {
-        return requestId;
-    }
-
-    @Override
-    public UUID interactionId() {
-        return interactionId;
     }
 }

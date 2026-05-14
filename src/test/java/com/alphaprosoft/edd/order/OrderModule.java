@@ -1,14 +1,9 @@
 package com.alphaprosoft.edd.order;
 
-import com.alphaprosoft.edd.Deps;
 import com.alphaprosoft.edd.Module;
-import com.alphaprosoft.edd.order.command.CancelOrderCommand;
 import com.alphaprosoft.edd.order.command.CancelOrderHandler;
-import com.alphaprosoft.edd.order.command.ConfirmPaymentCommand;
 import com.alphaprosoft.edd.order.command.ConfirmPaymentHandler;
-import com.alphaprosoft.edd.order.command.PlaceOrderCommand;
 import com.alphaprosoft.edd.order.command.PlaceOrderHandler;
-import com.alphaprosoft.edd.order.command.ShipOrderCommand;
 import com.alphaprosoft.edd.order.command.ShipOrderHandler;
 import com.alphaprosoft.edd.order.effect.OrderPlacedEffect;
 import com.alphaprosoft.edd.order.effect.OrderShippedEffect;
@@ -24,33 +19,25 @@ public final class OrderModule {
         return m.regCmd(
                         OrderIds.PLACE_ORDER,
                         spec -> spec.handler(new PlaceOrderHandler())
-                                .deps(Deps.<PlaceOrderCommand>builder()
-                                        .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
-                                        .reg(OrderDeps.PRODUCT, (_, cmd) -> new GetProductQuery(cmd.productId()))
-                                        .build())
+                                .dep(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
+                                .dep(OrderDeps.PRODUCT, (_, cmd) -> new GetProductQuery(cmd.productId()))
                                 .build())
                 .regCmd(
                         OrderIds.CONFIRM_PAYMENT,
                         spec -> spec.handler(new ConfirmPaymentHandler())
-                                .deps(Deps.<ConfirmPaymentCommand>builder()
-                                        .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
-                                        .build())
+                                .dep(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
                                 .idFn((_, cmd) -> cmd.orderId())
                                 .build())
                 .regCmd(
                         OrderIds.CANCEL_ORDER,
                         spec -> spec.handler(new CancelOrderHandler())
-                                .deps(Deps.<CancelOrderCommand>builder()
-                                        .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
-                                        .build())
+                                .dep(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
                                 .idFn((_, cmd) -> cmd.orderId())
                                 .build())
                 .regCmd(
                         OrderIds.SHIP_ORDER,
                         spec -> spec.handler(new ShipOrderHandler())
-                                .deps(Deps.<ShipOrderCommand>builder()
-                                        .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
-                                        .build())
+                                .dep(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
                                 .idFn((_, cmd) -> cmd.orderId())
                                 .build())
                 .regEvent(OrderIds.ORDER_PLACED, OrderModule::apply)

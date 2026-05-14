@@ -1,62 +1,44 @@
 package com.alphaprosoft.edd;
 
-import java.util.Optional;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.BiFunction;
 
-public final class CommandSpec<C extends Command, A extends Aggregate> {
+public record CommandSpec<C extends Command, A extends Aggregate>(
+        CommandId<C> id,
+        Class<A> aggregateType,
+        CommandHandler<C, A> handler,
+        List<DepBinding<C, ?, ?>> deps,
+        BiFunction<Context, C, UUID> idFn) {
 
-    private final CommandId<C> id;
-    private final Class<A> aggregateType;
-    private final CommandHandler<C, A> handler;
-    private final Deps<C> deps;
-    private final BiFunction<Context, C, UUID> idFn;
-
-    private CommandSpec(
-            CommandId<C> id,
-            Class<A> aggregateType,
-            CommandHandler<C, A> handler,
-            Deps<C> deps,
-            BiFunction<Context, C, UUID> idFn) {
-        this.id = id;
-        this.aggregateType = aggregateType;
-        this.handler = handler;
-        this.deps = deps;
-        this.idFn = idFn;
+    public CommandSpec {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(aggregateType, "aggregateType");
+        Objects.requireNonNull(handler, "handler");
+        deps = deps == null ? List.of() : List.copyOf(deps);
     }
 
     public static <C extends Command, A extends Aggregate> Init<C, A> builder(CommandId<C> id, Class<A> aggregateType) {
         return new StagedBuilder<>(id, aggregateType);
     }
 
-    public CommandId<C> id() {
-        return id;
-    }
-
-    public Class<A> aggregateType() {
-        return aggregateType;
-    }
-
-    public CommandHandler<C, A> handler() {
-        return handler;
-    }
-
-    public Deps<C> deps() {
-        return deps;
-    }
-
-    public Optional<BiFunction<Context, C, UUID>> idFn() {
-        return Optional.ofNullable(idFn);
-    }
+    public record DepBinding<C extends Command, Q extends Query, T>(
+            Dep<Q, T> key, BiFunction<Context, ? super C, Q> queryFn) {}
 
     /** First stage — a handler is required before anything else can be set. */
-    public interface Init<C extends Command, A extends Aggregate> {
+    public sealed interface Init<C extends Command, A extends Aggregate> permits StagedBuilder {
         Builder<C, A> handler(CommandHandler<C, A> handler);
     }
 
-    /** Second stage — optionals and build. */
-    public interface Builder<C extends Command, A extends Aggregate> {
-        Builder<C, A> deps(Deps<C> deps);
+    /**
+     * Second stage — after the handler is set, the command type {@code C} is fixed.
+     * {@code dep(...)} lambdas see {@code cmd} as the specific command record; no type witness needed.
+     */
+    public sealed interface Builder<C extends Command, A extends Aggregate> permits StagedBuilder {
+
+        <Q extends Query, T> Builder<C, A> dep(Dep<Q, T> key, BiFunction<Context, ? super C, Q> queryFn);
 
         Builder<C, A> idFn(BiFunction<Context, C, UUID> idFn);
 
@@ -69,7 +51,7 @@ public final class CommandSpec<C extends Command, A extends Aggregate> {
         private final CommandId<C> id;
         private final Class<A> aggregateType;
         private CommandHandler<C, A> handler;
-        private Deps<C> deps = Deps.empty();
+        private final List<DepBinding<C, ?, ?>> deps = new ArrayList<>();
         private BiFunction<Context, C, UUID> idFn;
 
         StagedBuilder(CommandId<C> id, Class<A> aggregateType) {
@@ -84,8 +66,8 @@ public final class CommandSpec<C extends Command, A extends Aggregate> {
         }
 
         @Override
-        public Builder<C, A> deps(Deps<C> deps) {
-            this.deps = deps;
+        public <Q extends Query, T> Builder<C, A> dep(Dep<Q, T> key, BiFunction<Context, ? super C, Q> queryFn) {
+            deps.add(new DepBinding<>(key, queryFn));
             return this;
         }
 

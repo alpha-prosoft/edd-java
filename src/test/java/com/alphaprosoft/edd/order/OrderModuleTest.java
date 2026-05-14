@@ -74,13 +74,13 @@ class OrderModuleTest {
 
         var success = assertInstanceOf(CommandResponse.Success.class, resp);
         assertEquals(1, success.events().size());
-        var placed = assertInstanceOf(OrderPlacedEvent.class, success.events().get(0));
+        var placed = assertInstanceOf(OrderPlacedEvent.class, success.events().getFirst());
         assertEquals(cmdId, placed.id());
         assertEquals(3, placed.quantity());
         assertEquals(3000, placed.total().amountCents());
 
         assertEquals(1, success.effects().size());
-        var fx = success.effects().get(0);
+        var fx = success.effects().getFirst();
         assertTrue(fx.service().isPresent());
         assertEquals("notification-svc", fx.service().get().name());
         assertInstanceOf(NotifyCustomerCommand.class, fx.command());
@@ -116,12 +116,13 @@ class OrderModuleTest {
                 new ConfirmPaymentCommand(UUID.randomUUID(), orderId, Money.usd(2000)), RequestMeta.newRequest());
 
         var success = assertInstanceOf(CommandResponse.Success.class, resp);
+        assertEquals(orderId, success.aggregateId(), "idFn should map command id to orderId");
         var confirmed =
-                assertInstanceOf(PaymentConfirmedEvent.class, success.events().get(0));
+                assertInstanceOf(PaymentConfirmedEvent.class, success.events().getFirst());
         assertEquals(orderId, confirmed.id());
 
         assertEquals(1, success.effects().size());
-        var fx = success.effects().get(0);
+        var fx = success.effects().getFirst();
         assertTrue(fx.service().isEmpty(), "ShipOrder fx should target this service");
         var ship = assertInstanceOf(ShipOrderCommand.class, fx.command());
         assertEquals(orderId, ship.orderId());

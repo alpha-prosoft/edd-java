@@ -124,15 +124,18 @@ Inside the module, every `regCmd` and `regEvent` is implicitly bound to `OrderAg
 
 ### Staged `CommandSpec` builder
 
-`CommandSpec.builder(...)` returns an `Init` stage that *only* exposes `.handler(...)`. After the handler is set, you get a `Builder` with the optional `.deps(...)`, `.idFn(...)`, and `.build()` — so the compiler forbids building a spec without a handler.
+`CommandSpec.builder(...)` returns an `Init` stage that *only* exposes `.handler(...)`. After the handler is set, you get a `Builder` with `.dep(...)`, `.idFn(...)`, and `.build()` — so the compiler forbids building a spec without a handler, and the command type `C` is fixed by the handler so the dep lambdas need **no type witness**.
 
 ```java
 m.regCmd(OrderIds.PLACE_ORDER, spec -> spec
-    .handler(new PlaceOrderHandler())   // Init → Builder
-    .deps(...)                          // optional
-    .idFn(...)                          // optional
-    .build());                          // returns CommandSpec<PlaceOrderCommand, OrderAggregate>
+    .handler(new PlaceOrderHandler())                                   // Init → Builder<PlaceOrderCommand, OrderAggregate>
+    .dep(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))   // cmd typed!
+    .dep(OrderDeps.PRODUCT,  (_, cmd) -> new GetProductQuery(cmd.productId()))
+    .idFn((_, cmd) -> cmd.orderId())
+    .build());
 ```
+
+Each call to `.dep(key, fn)` adds one dependency. Inside the lambda, `cmd` is the specific record type (`PlaceOrderCommand` here) because the handler instance pinned `C` for the rest of the chain.
 
 ---
 
@@ -246,29 +249,29 @@ public final class OrderDeps {
 
 The `<Q, T>` type parameters say: this dep produces a query of type `Q` and yields a value of type `T` (read off the `QueryId<Q, T>`).
 
-The **how-to-build-the-query** part is provided at registration time, alongside the command:
+The **how-to-build-the-query** part is provided at registration time, chained right onto the spec builder:
 
 ```java
-.deps(Deps.<PlaceOrderCommand>builder()
-        .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
-        .reg(OrderDeps.PRODUCT,  (_, cmd) -> new GetProductQuery(cmd.productId()))
-        .build())
+spec.handler(new PlaceOrderHandler())
+    .dep(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
+    .dep(OrderDeps.PRODUCT,  (_, cmd) -> new GetProductQuery(cmd.productId()))
+    .build()
 ```
 
 Three guarantees fall out of this split:
 
-1. **The lambda is locked to the command type.** `Deps.<PlaceOrderCommand>builder()` parameterises the builder by `PlaceOrderCommand`, so the lambda sees `cmd` as a `PlaceOrderCommand` and can call its record components directly. No marker interfaces needed — the call-site type witness does the work.
-2. **The query produced is type-checked against the dep's `Q`.** `OrderDeps.CUSTOMER` is `Dep<GetCustomerQuery, Customer>`, so `.reg(CUSTOMER, fn)` only accepts a lambda returning `GetCustomerQuery`.
+1. **The lambda is locked to the command type — automatically.** `new PlaceOrderHandler()` is `CommandHandler<PlaceOrderCommand, OrderAggregate>`, so after `.handler(...)` the builder is `Builder<PlaceOrderCommand, OrderAggregate>`. Every subsequent `.dep(KEY, fn)` types `cmd` as `PlaceOrderCommand` — no type witness needed.
+2. **The query produced is type-checked against the dep's `Q`.** `OrderDeps.CUSTOMER` is `Dep<GetCustomerQuery, Customer>`, so `.dep(CUSTOMER, fn)` only accepts a lambda returning `GetCustomerQuery`.
 3. **The result stored in `ctx` carries `T`.** `ctx.get(OrderDeps.CUSTOMER)` returns `Customer` with no cast.
 
 Reusing the same dep across commands with different shapes is just a different lambda:
 
 ```java
 // PlaceOrderCommand has a customerId field directly
-.reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
+.dep(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
 
 // SendInvoiceCommand has a billingCustomerId field
-.reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.billingCustomerId()))
+.dep(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.billingCustomerId()))
 ```
 
 ### Handlers are tiny, typed classes
@@ -350,16 +353,12 @@ public final class OrderModule {
         return m
             .regCmd(OrderIds.PLACE_ORDER, spec -> spec
                     .handler(new PlaceOrderHandler())
-                    .deps(Deps.<PlaceOrderCommand>builder()
-                            .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
-                            .reg(OrderDeps.PRODUCT,  (_, cmd) -> new GetProductQuery(cmd.productId()))
-                            .build())
+                    .dep(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
+                    .dep(OrderDeps.PRODUCT,  (_, cmd) -> new GetProductQuery(cmd.productId()))
                     .build())
             .regCmd(OrderIds.CONFIRM_PAYMENT, spec -> spec
                     .handler(new ConfirmPaymentHandler())
-                    .deps(Deps.<ConfirmPaymentCommand>builder()
-                            .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
-                            .build())
+                    .dep(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
                     .idFn((_, cmd) -> cmd.orderId())                  // command id ≠ aggregate id
                     .build())
             .regCmd(/* CancelOrderCommand */)
@@ -436,7 +435,7 @@ void confirmPaymentUsesIdFnAndProducesShipFx() {
 
 | edd-core | edd-java |
 |---|---|
-| `(edd/reg-cmd ctx :create-user handler :deps {…} :id-fn …)` | `m.regCmd(CREATE_USER, spec -> spec.handler(…).deps(Deps.<…>builder().reg(…).build()).idFn(…).build())` |
+| `(edd/reg-cmd ctx :create-user handler :deps {…} :id-fn …)` | `m.regCmd(CREATE_USER, spec -> spec.handler(…).dep(KEY, fn).idFn(…).build())` |
 | `(edd/reg-event ctx :user-created (fn [agg evt] …))` | `m.regEvent(USER_CREATED, (agg, evt) -> …)` |
 | `(edd/reg-event-fx ctx :user-created (fn [ctx evt] …))` | `m.regEventFx(USER_CREATED, new UserCreatedEffect())` |
 | `(edd/reg-query ctx :get-user handler)` | `m.regQuery(GET_USER, handler)` |
@@ -456,7 +455,7 @@ The biggest semantic shift: edd-core dispatches on the `:cmd-id` keyword inside 
 
 - [x] Typed `CommandId<C>`, `EventId<E>`, `QueryId<Q, R>` registries
 - [x] `Dep<Q, T>` typed keys with `Dep.local(...)` and `Dep.remote(...)` factories
-- [x] `Deps.<C>builder().reg(KEY, fn).build()` wiring at registration time
+- [x] `.dep(KEY, fn)` chained on the spec builder — `cmd` type is inferred from the handler instance, no witness needed
 - [x] `Context.get(Dep)` heterogeneous typed map
 - [x] **Staged `CommandSpec.builder`** — `.handler(...)` is required before `.deps(...)`/`.idFn(...)`/`.build()` are visible
 - [x] **`Application.Builder.module(Class<A>, ...)`** — aggregate type pinned per module, one module per aggregate
@@ -508,7 +507,6 @@ edd-java/
     ├── main/java/com/alphaprosoft/edd/
     │   ├── Command.java   Event.java   Aggregate.java   Query.java
     │   ├── CommandId.java   EventId.java   QueryId.java   Dep.java
-    │   ├── Deps.java                          (per-command wiring builder)
     │   ├── CommandHandler.java   EventHandler.java   QueryHandler.java
     │   ├── EventFxHandler.java
     │   ├── HandlerResult.java                 (sealed)
@@ -533,4 +531,4 @@ edd-java/
 
 ## Credits
 
-Designed after Robert Pofuk's [edd-core](https://github.com/alpha-prosoft/edd-core) (Clojure). All concepts — commands, events, aggregates, deps, id-fn, event-fx — come from that project. The Java type-system choices (typed-enum IDs, sealed events, `Dep<Q, T>` heterogeneous map keys, `Deps<C>` for wiring, `Module<A>` for aggregate scoping, staged builder for `CommandSpec`) are what make a port worthwhile in a language without runtime data-driven dispatch.
+Designed after Robert Pofuk's [edd-core](https://github.com/alpha-prosoft/edd-core) (Clojure). All concepts — commands, events, aggregates, deps, id-fn, event-fx — come from that project. The Java type-system choices (typed-enum IDs, sealed events, `Dep<Q, T>` heterogeneous map keys, `Module<A>` for aggregate scoping, staged `CommandSpec` builder with type-inferred `.dep(...)`) are what make a port worthwhile in a language without runtime data-driven dispatch.
