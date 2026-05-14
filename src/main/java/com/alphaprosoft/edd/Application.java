@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 public final class Application {
 
@@ -190,6 +191,11 @@ public final class Application {
 
         public Builder remoteResolver(RemoteResolver resolver) {
             this.remoteResolver = resolver;
+            return this;
+        }
+
+        public <A extends Aggregate> Builder module(Class<A> aggregateType, Function<Module<A>, Module<A>> configure) {
+            configure.apply(new Module<>(this, aggregateType));
             return this;
         }
 

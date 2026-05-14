@@ -8,12 +8,12 @@ import com.alphaprosoft.edd.order.Money;
 import com.alphaprosoft.edd.order.OrderAggregate;
 import com.alphaprosoft.edd.order.OrderDeps;
 import com.alphaprosoft.edd.order.Product;
-import com.alphaprosoft.edd.order.event.OrderPlaced;
+import com.alphaprosoft.edd.order.event.OrderPlacedEvent;
 
-public final class PlaceOrderHandler implements CommandHandler<PlaceOrder, OrderAggregate> {
+public final class PlaceOrderHandler implements CommandHandler<PlaceOrderCommand, OrderAggregate> {
 
     @Override
-    public HandlerResult<OrderAggregate> handle(Context ctx, PlaceOrder cmd) {
+    public HandlerResult<OrderAggregate> handle(Context ctx, PlaceOrderCommand cmd) {
         Customer customer = ctx.get(OrderDeps.CUSTOMER);
         Product product = ctx.get(OrderDeps.PRODUCT);
 
@@ -22,6 +22,6 @@ public final class PlaceOrderHandler implements CommandHandler<PlaceOrder, Order
         }
 
         Money total = product.price().times(cmd.quantity());
-        return HandlerResult.of(new OrderPlaced(cmd.id(), customer.id(), product.id(), cmd.quantity(), total));
+        return HandlerResult.of(new OrderPlacedEvent(cmd.id(), customer.id(), product.id(), cmd.quantity(), total));
     }
 }

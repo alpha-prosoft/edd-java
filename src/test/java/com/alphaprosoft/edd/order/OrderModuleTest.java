@@ -17,23 +17,24 @@ import com.alphaprosoft.edd.Query;
 import com.alphaprosoft.edd.QueryHandler;
 import com.alphaprosoft.edd.RemoteResolver;
 import com.alphaprosoft.edd.RequestMeta;
-import com.alphaprosoft.edd.order.command.CancelOrder;
-import com.alphaprosoft.edd.order.command.ConfirmPayment;
-import com.alphaprosoft.edd.order.command.NotifyCustomer;
-import com.alphaprosoft.edd.order.command.PlaceOrder;
-import com.alphaprosoft.edd.order.command.ShipOrder;
-import com.alphaprosoft.edd.order.event.OrderCancelled;
-import com.alphaprosoft.edd.order.event.OrderPlaced;
-import com.alphaprosoft.edd.order.event.OrderShipped;
-import com.alphaprosoft.edd.order.event.PaymentConfirmed;
-import com.alphaprosoft.edd.order.query.GetCustomer;
-import com.alphaprosoft.edd.order.query.GetOrder;
-import com.alphaprosoft.edd.order.query.GetProduct;
+import com.alphaprosoft.edd.order.command.CancelOrderCommand;
+import com.alphaprosoft.edd.order.command.ConfirmPaymentCommand;
+import com.alphaprosoft.edd.order.command.NotifyCustomerCommand;
+import com.alphaprosoft.edd.order.command.PlaceOrderCommand;
+import com.alphaprosoft.edd.order.command.ShipOrderCommand;
+import com.alphaprosoft.edd.order.event.OrderCancelledEvent;
+import com.alphaprosoft.edd.order.event.OrderPlacedEvent;
+import com.alphaprosoft.edd.order.event.OrderShippedEvent;
+import com.alphaprosoft.edd.order.event.PaymentConfirmedEvent;
+import com.alphaprosoft.edd.order.query.GetCustomerQuery;
+import com.alphaprosoft.edd.order.query.GetOrderQuery;
+import com.alphaprosoft.edd.order.query.GetProductQuery;
 
 class OrderModuleTest {
 
-    private static Application build(QueryHandler<GetOrder, OrderAggregate> getOrder, RemoteResolver remote) {
-        return OrderModule.register(Application.builder("order-svc"))
+    private static Application build(QueryHandler<GetOrderQuery, OrderAggregate> getOrder, RemoteResolver remote) {
+        return Application.builder("order-svc")
+                .module(OrderAggregate.class, OrderModule::register)
                 .regQuery(OrderIds.GET_ORDER, getOrder)
                 .remoteResolver(remote)
                 .build();
@@ -63,16 +64,17 @@ class OrderModuleTest {
         Product product = new Product(productId, "Widget", Money.usd(1000), 50);
 
         Map<Class<? extends Query>, Object> stubs = new HashMap<>();
-        stubs.put(GetCustomer.class, customer);
-        stubs.put(GetProduct.class, product);
+        stubs.put(GetCustomerQuery.class, customer);
+        stubs.put(GetProductQuery.class, product);
         Application app = build((_, _) -> null, stubbedRemotes(stubs));
 
         UUID cmdId = UUID.randomUUID();
-        CommandResponse resp = app.dispatch(new PlaceOrder(cmdId, customerId, productId, 3), RequestMeta.newRequest());
+        CommandResponse resp =
+                app.dispatch(new PlaceOrderCommand(cmdId, customerId, productId, 3), RequestMeta.newRequest());
 
         var success = assertInstanceOf(CommandResponse.Success.class, resp);
         assertEquals(1, success.events().size());
-        var placed = assertInstanceOf(OrderPlaced.class, success.events().get(0));
+        var placed = assertInstanceOf(OrderPlacedEvent.class, success.events().get(0));
         assertEquals(cmdId, placed.id());
         assertEquals(3, placed.quantity());
         assertEquals(3000, placed.total().amountCents());
@@ -81,7 +83,7 @@ class OrderModuleTest {
         var fx = success.effects().get(0);
         assertTrue(fx.service().isPresent());
         assertEquals("notification-svc", fx.service().get().name());
-        assertInstanceOf(NotifyCustomer.class, fx.command());
+        assertInstanceOf(NotifyCustomerCommand.class, fx.command());
     }
 
     @Test
@@ -89,12 +91,12 @@ class OrderModuleTest {
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
         Map<Class<? extends Query>, Object> stubs = new HashMap<>();
-        stubs.put(GetCustomer.class, new Customer(customerId, "Bob", Customer.Tier.STANDARD));
-        stubs.put(GetProduct.class, new Product(productId, "Scarce", Money.usd(500), 1));
+        stubs.put(GetCustomerQuery.class, new Customer(customerId, "Bob", Customer.Tier.STANDARD));
+        stubs.put(GetProductQuery.class, new Product(productId, "Scarce", Money.usd(500), 1));
         Application app = build((_, _) -> null, stubbedRemotes(stubs));
 
-        CommandResponse resp =
-                app.dispatch(new PlaceOrder(UUID.randomUUID(), customerId, productId, 5), RequestMeta.newRequest());
+        CommandResponse resp = app.dispatch(
+                new PlaceOrderCommand(UUID.randomUUID(), customerId, productId, 5), RequestMeta.newRequest());
 
         var failure = assertInstanceOf(CommandResponse.Failure.class, resp);
         assertEquals("insufficient-stock", failure.code());
@@ -110,18 +112,18 @@ class OrderModuleTest {
             throw new IllegalStateException("no remote calls expected");
         });
 
-        CommandResponse resp =
-                app.dispatch(new ConfirmPayment(UUID.randomUUID(), orderId, Money.usd(2000)), RequestMeta.newRequest());
+        CommandResponse resp = app.dispatch(
+                new ConfirmPaymentCommand(UUID.randomUUID(), orderId, Money.usd(2000)), RequestMeta.newRequest());
 
         var success = assertInstanceOf(CommandResponse.Success.class, resp);
         var confirmed =
-                assertInstanceOf(PaymentConfirmed.class, success.events().get(0));
+                assertInstanceOf(PaymentConfirmedEvent.class, success.events().get(0));
         assertEquals(orderId, confirmed.id());
 
         assertEquals(1, success.effects().size());
         var fx = success.effects().get(0);
         assertTrue(fx.service().isEmpty(), "ShipOrder fx should target this service");
-        var ship = assertInstanceOf(ShipOrder.class, fx.command());
+        var ship = assertInstanceOf(ShipOrderCommand.class, fx.command());
         assertEquals(orderId, ship.orderId());
     }
 
@@ -135,8 +137,8 @@ class OrderModuleTest {
             throw new IllegalStateException();
         });
 
-        CommandResponse resp =
-                app.dispatch(new CancelOrder(UUID.randomUUID(), orderId, "changed mind"), RequestMeta.newRequest());
+        CommandResponse resp = app.dispatch(
+                new CancelOrderCommand(UUID.randomUUID(), orderId, "changed mind"), RequestMeta.newRequest());
 
         var failure = assertInstanceOf(CommandResponse.Failure.class, resp);
         assertEquals("already-shipped", failure.code());
@@ -146,18 +148,18 @@ class OrderModuleTest {
     void aggregateApplyExhaustivelyHandlesEveryEvent() {
         OrderAggregate agg = OrderAggregate.initial(UUID.randomUUID());
 
-        OrderAggregate afterPlaced =
-                agg.applyEvent(new OrderPlaced(agg.id(), UUID.randomUUID(), UUID.randomUUID(), 2, Money.usd(2000)));
+        OrderAggregate afterPlaced = agg.applyEvent(
+                new OrderPlacedEvent(agg.id(), UUID.randomUUID(), UUID.randomUUID(), 2, Money.usd(2000)));
         assertEquals(OrderStatus.PLACED, afterPlaced.status());
 
-        OrderAggregate afterPaid = afterPlaced.applyEvent(new PaymentConfirmed(agg.id(), Money.usd(2000)));
+        OrderAggregate afterPaid = afterPlaced.applyEvent(new PaymentConfirmedEvent(agg.id(), Money.usd(2000)));
         assertEquals(OrderStatus.PAID, afterPaid.status());
 
-        OrderAggregate afterShipped = afterPaid.applyEvent(new OrderShipped(agg.id(), "T-1"));
+        OrderAggregate afterShipped = afterPaid.applyEvent(new OrderShippedEvent(agg.id(), "T-1"));
         assertEquals(OrderStatus.SHIPPED, afterShipped.status());
         assertEquals("T-1", afterShipped.trackingNumber());
 
-        OrderAggregate afterCancelled = afterPlaced.applyEvent(new OrderCancelled(agg.id(), "oops"));
+        OrderAggregate afterCancelled = afterPlaced.applyEvent(new OrderCancelledEvent(agg.id(), "oops"));
         assertEquals(OrderStatus.CANCELLED, afterCancelled.status());
     }
 
@@ -168,7 +170,7 @@ class OrderModuleTest {
                 orderId, 2, OrderStatus.PAID, UUID.randomUUID(), UUID.randomUUID(), 1, Money.usd(500), null);
         Application app = build((_, _) -> stored, (_, _) -> null);
 
-        OrderAggregate result = app.query(OrderIds.GET_ORDER, new GetOrder(orderId), RequestMeta.newRequest());
+        OrderAggregate result = app.query(OrderIds.GET_ORDER, new GetOrderQuery(orderId), RequestMeta.newRequest());
 
         assertEquals(orderId, result.id());
         assertEquals(OrderStatus.PAID, result.status());
@@ -178,7 +180,9 @@ class OrderModuleTest {
     void unknownLocalQueryFailsAtBuild() {
         IllegalStateException ex = assertThrows(
                 IllegalStateException.class,
-                () -> OrderModule.register(Application.builder("order-svc")).build());
+                () -> Application.builder("order-svc")
+                        .module(OrderAggregate.class, OrderModule::register)
+                        .build());
         assertTrue(ex.getMessage().contains("get-order"));
     }
 }

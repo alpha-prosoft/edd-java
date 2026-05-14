@@ -6,12 +6,12 @@ import com.alphaprosoft.edd.HandlerResult;
 import com.alphaprosoft.edd.order.OrderAggregate;
 import com.alphaprosoft.edd.order.OrderDeps;
 import com.alphaprosoft.edd.order.OrderStatus;
-import com.alphaprosoft.edd.order.event.PaymentConfirmed;
+import com.alphaprosoft.edd.order.event.PaymentConfirmedEvent;
 
-public final class ConfirmPaymentHandler implements CommandHandler<ConfirmPayment, OrderAggregate> {
+public final class ConfirmPaymentHandler implements CommandHandler<ConfirmPaymentCommand, OrderAggregate> {
 
     @Override
-    public HandlerResult<OrderAggregate> handle(Context ctx, ConfirmPayment cmd) {
+    public HandlerResult<OrderAggregate> handle(Context ctx, ConfirmPaymentCommand cmd) {
         OrderAggregate order = ctx.get(OrderDeps.CURRENT_ORDER);
         if (order.status() != OrderStatus.PLACED) {
             return HandlerResult.error("invalid-status");
@@ -19,6 +19,6 @@ public final class ConfirmPaymentHandler implements CommandHandler<ConfirmPaymen
         if (cmd.amount().amountCents() != order.total().amountCents()) {
             return HandlerResult.error("amount-mismatch");
         }
-        return HandlerResult.of(new PaymentConfirmed(cmd.orderId(), cmd.amount()));
+        return HandlerResult.of(new PaymentConfirmedEvent(cmd.orderId(), cmd.amount()));
     }
 }

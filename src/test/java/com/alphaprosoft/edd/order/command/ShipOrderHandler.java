@@ -6,16 +6,16 @@ import com.alphaprosoft.edd.HandlerResult;
 import com.alphaprosoft.edd.order.OrderAggregate;
 import com.alphaprosoft.edd.order.OrderDeps;
 import com.alphaprosoft.edd.order.OrderStatus;
-import com.alphaprosoft.edd.order.event.OrderShipped;
+import com.alphaprosoft.edd.order.event.OrderShippedEvent;
 
-public final class ShipOrderHandler implements CommandHandler<ShipOrder, OrderAggregate> {
+public final class ShipOrderHandler implements CommandHandler<ShipOrderCommand, OrderAggregate> {
 
     @Override
-    public HandlerResult<OrderAggregate> handle(Context ctx, ShipOrder cmd) {
+    public HandlerResult<OrderAggregate> handle(Context ctx, ShipOrderCommand cmd) {
         OrderAggregate order = ctx.get(OrderDeps.CURRENT_ORDER);
         if (order.status() != OrderStatus.PAID) {
             return HandlerResult.error("not-paid");
         }
-        return HandlerResult.of(new OrderShipped(cmd.orderId(), cmd.trackingNumber()));
+        return HandlerResult.of(new OrderShippedEvent(cmd.orderId(), cmd.trackingNumber()));
     }
 }

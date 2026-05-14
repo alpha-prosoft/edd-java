@@ -7,15 +7,15 @@ import com.alphaprosoft.edd.CommandEnvelope;
 import com.alphaprosoft.edd.Context;
 import com.alphaprosoft.edd.EventFxHandler;
 import com.alphaprosoft.edd.order.Services;
-import com.alphaprosoft.edd.order.command.NotifyCustomer;
-import com.alphaprosoft.edd.order.event.OrderPlaced;
+import com.alphaprosoft.edd.order.command.NotifyCustomerCommand;
+import com.alphaprosoft.edd.order.event.OrderPlacedEvent;
 
-public final class OrderPlacedEffect implements EventFxHandler<OrderPlaced> {
+public final class OrderPlacedEffect implements EventFxHandler<OrderPlacedEvent> {
 
     @Override
-    public List<CommandEnvelope<?>> fx(Context ctx, OrderPlaced event) {
+    public List<CommandEnvelope<?>> fx(Context ctx, OrderPlacedEvent event) {
         return List.of(CommandEnvelope.on(
                 Services.NOTIFICATION_SVC,
-                new NotifyCustomer(UUID.randomUUID(), event.customerId(), "Order placed: " + event.id())));
+                new NotifyCustomerCommand(UUID.randomUUID(), event.customerId(), "Order placed: " + event.id())));
     }
 }

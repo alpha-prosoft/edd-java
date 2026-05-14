@@ -4,4 +4,4 @@ import java.util.UUID;
 
 import com.alphaprosoft.edd.Command;
 
-public record PlaceOrder(UUID id, UUID customerId, UUID productId, int quantity) implements Command {}
+public record CancelOrderCommand(UUID id, UUID orderId, String reason) implements Command {}

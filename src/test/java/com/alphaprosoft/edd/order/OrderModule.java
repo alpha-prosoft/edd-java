@@ -1,59 +1,62 @@
 package com.alphaprosoft.edd.order;
 
-import com.alphaprosoft.edd.Application;
-import com.alphaprosoft.edd.CommandSpec;
 import com.alphaprosoft.edd.Deps;
-import com.alphaprosoft.edd.order.command.CancelOrder;
+import com.alphaprosoft.edd.Module;
+import com.alphaprosoft.edd.order.command.CancelOrderCommand;
 import com.alphaprosoft.edd.order.command.CancelOrderHandler;
-import com.alphaprosoft.edd.order.command.ConfirmPayment;
+import com.alphaprosoft.edd.order.command.ConfirmPaymentCommand;
 import com.alphaprosoft.edd.order.command.ConfirmPaymentHandler;
-import com.alphaprosoft.edd.order.command.PlaceOrder;
+import com.alphaprosoft.edd.order.command.PlaceOrderCommand;
 import com.alphaprosoft.edd.order.command.PlaceOrderHandler;
-import com.alphaprosoft.edd.order.command.ShipOrder;
+import com.alphaprosoft.edd.order.command.ShipOrderCommand;
 import com.alphaprosoft.edd.order.command.ShipOrderHandler;
 import com.alphaprosoft.edd.order.effect.OrderPlacedEffect;
 import com.alphaprosoft.edd.order.effect.OrderShippedEffect;
 import com.alphaprosoft.edd.order.effect.PaymentConfirmedEffect;
 import com.alphaprosoft.edd.order.event.OrderEvent;
-import com.alphaprosoft.edd.order.query.GetCustomer;
-import com.alphaprosoft.edd.order.query.GetOrder;
-import com.alphaprosoft.edd.order.query.GetProduct;
+import com.alphaprosoft.edd.order.query.GetCustomerQuery;
+import com.alphaprosoft.edd.order.query.GetOrderQuery;
+import com.alphaprosoft.edd.order.query.GetProductQuery;
 
 public final class OrderModule {
 
-    public static Application.Builder register(Application.Builder app) {
-        return app.regCmd(CommandSpec.builder(OrderIds.PLACE_ORDER, OrderAggregate.class)
-                        .handler(new PlaceOrderHandler())
-                        .deps(Deps.<PlaceOrder>builder()
-                                .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomer(cmd.customerId()))
-                                .reg(OrderDeps.PRODUCT, (_, cmd) -> new GetProduct(cmd.productId()))
+    public static Module<OrderAggregate> register(Module<OrderAggregate> m) {
+        return m.regCmd(
+                        OrderIds.PLACE_ORDER,
+                        spec -> spec.handler(new PlaceOrderHandler())
+                                .deps(Deps.<PlaceOrderCommand>builder()
+                                        .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
+                                        .reg(OrderDeps.PRODUCT, (_, cmd) -> new GetProductQuery(cmd.productId()))
+                                        .build())
                                 .build())
-                        .build())
-                .regCmd(CommandSpec.builder(OrderIds.CONFIRM_PAYMENT, OrderAggregate.class)
-                        .handler(new ConfirmPaymentHandler())
-                        .deps(Deps.<ConfirmPayment>builder()
-                                .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrder(cmd.orderId()))
+                .regCmd(
+                        OrderIds.CONFIRM_PAYMENT,
+                        spec -> spec.handler(new ConfirmPaymentHandler())
+                                .deps(Deps.<ConfirmPaymentCommand>builder()
+                                        .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
+                                        .build())
+                                .idFn((_, cmd) -> cmd.orderId())
                                 .build())
-                        .idFn((_, cmd) -> cmd.orderId())
-                        .build())
-                .regCmd(CommandSpec.builder(OrderIds.CANCEL_ORDER, OrderAggregate.class)
-                        .handler(new CancelOrderHandler())
-                        .deps(Deps.<CancelOrder>builder()
-                                .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrder(cmd.orderId()))
+                .regCmd(
+                        OrderIds.CANCEL_ORDER,
+                        spec -> spec.handler(new CancelOrderHandler())
+                                .deps(Deps.<CancelOrderCommand>builder()
+                                        .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
+                                        .build())
+                                .idFn((_, cmd) -> cmd.orderId())
                                 .build())
-                        .idFn((_, cmd) -> cmd.orderId())
-                        .build())
-                .regCmd(CommandSpec.builder(OrderIds.SHIP_ORDER, OrderAggregate.class)
-                        .handler(new ShipOrderHandler())
-                        .deps(Deps.<ShipOrder>builder()
-                                .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrder(cmd.orderId()))
+                .regCmd(
+                        OrderIds.SHIP_ORDER,
+                        spec -> spec.handler(new ShipOrderHandler())
+                                .deps(Deps.<ShipOrderCommand>builder()
+                                        .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
+                                        .build())
+                                .idFn((_, cmd) -> cmd.orderId())
                                 .build())
-                        .idFn((_, cmd) -> cmd.orderId())
-                        .build())
-                .regEvent(OrderIds.ORDER_PLACED, OrderAggregate.class, OrderModule::apply)
-                .regEvent(OrderIds.PAYMENT_CONFIRMED, OrderAggregate.class, OrderModule::apply)
-                .regEvent(OrderIds.ORDER_CANCELLED, OrderAggregate.class, OrderModule::apply)
-                .regEvent(OrderIds.ORDER_SHIPPED, OrderAggregate.class, OrderModule::apply)
+                .regEvent(OrderIds.ORDER_PLACED, OrderModule::apply)
+                .regEvent(OrderIds.PAYMENT_CONFIRMED, OrderModule::apply)
+                .regEvent(OrderIds.ORDER_CANCELLED, OrderModule::apply)
+                .regEvent(OrderIds.ORDER_SHIPPED, OrderModule::apply)
                 .regEventFx(OrderIds.ORDER_PLACED, new OrderPlacedEffect())
                 .regEventFx(OrderIds.PAYMENT_CONFIRMED, new PaymentConfirmedEffect())
                 .regEventFx(OrderIds.ORDER_SHIPPED, new OrderShippedEffect());

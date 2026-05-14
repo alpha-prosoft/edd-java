@@ -6,13 +6,14 @@ import java.util.UUID;
 import com.alphaprosoft.edd.CommandEnvelope;
 import com.alphaprosoft.edd.Context;
 import com.alphaprosoft.edd.EventFxHandler;
-import com.alphaprosoft.edd.order.command.ShipOrder;
-import com.alphaprosoft.edd.order.event.PaymentConfirmed;
+import com.alphaprosoft.edd.order.command.ShipOrderCommand;
+import com.alphaprosoft.edd.order.event.PaymentConfirmedEvent;
 
-public final class PaymentConfirmedEffect implements EventFxHandler<PaymentConfirmed> {
+public final class PaymentConfirmedEffect implements EventFxHandler<PaymentConfirmedEvent> {
 
     @Override
-    public List<CommandEnvelope<?>> fx(Context ctx, PaymentConfirmed event) {
-        return List.of(CommandEnvelope.local(new ShipOrder(UUID.randomUUID(), event.id(), "TRACK-" + event.id())));
+    public List<CommandEnvelope<?>> fx(Context ctx, PaymentConfirmedEvent event) {
+        return List.of(
+                CommandEnvelope.local(new ShipOrderCommand(UUID.randomUUID(), event.id(), "TRACK-" + event.id())));
     }
 }

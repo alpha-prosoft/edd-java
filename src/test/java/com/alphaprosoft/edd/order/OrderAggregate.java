@@ -3,11 +3,11 @@ package com.alphaprosoft.edd.order;
 import java.util.UUID;
 
 import com.alphaprosoft.edd.Aggregate;
-import com.alphaprosoft.edd.order.event.OrderCancelled;
+import com.alphaprosoft.edd.order.event.OrderCancelledEvent;
 import com.alphaprosoft.edd.order.event.OrderEvent;
-import com.alphaprosoft.edd.order.event.OrderPlaced;
-import com.alphaprosoft.edd.order.event.OrderShipped;
-import com.alphaprosoft.edd.order.event.PaymentConfirmed;
+import com.alphaprosoft.edd.order.event.OrderPlacedEvent;
+import com.alphaprosoft.edd.order.event.OrderShippedEvent;
+import com.alphaprosoft.edd.order.event.PaymentConfirmedEvent;
 
 public record OrderAggregate(
         UUID id,
@@ -26,7 +26,7 @@ public record OrderAggregate(
 
     public OrderAggregate applyEvent(OrderEvent event) {
         return switch (event) {
-            case OrderPlaced e ->
+            case OrderPlacedEvent e ->
                 new OrderAggregate(
                         e.id(),
                         version + 1,
@@ -36,13 +36,13 @@ public record OrderAggregate(
                         e.quantity(),
                         e.total(),
                         null);
-            case PaymentConfirmed _ ->
+            case PaymentConfirmedEvent _ ->
                 new OrderAggregate(
                         id, version + 1, OrderStatus.PAID, customerId, productId, quantity, total, trackingNumber);
-            case OrderCancelled _ ->
+            case OrderCancelledEvent _ ->
                 new OrderAggregate(
                         id, version + 1, OrderStatus.CANCELLED, customerId, productId, quantity, total, trackingNumber);
-            case OrderShipped e ->
+            case OrderShippedEvent e ->
                 new OrderAggregate(
                         id,
                         version + 1,

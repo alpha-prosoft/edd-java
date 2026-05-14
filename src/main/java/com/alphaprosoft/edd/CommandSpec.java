@@ -12,20 +12,21 @@ public final class CommandSpec<C extends Command, A extends Aggregate> {
     private final Deps<C> deps;
     private final BiFunction<Context, C, UUID> idFn;
 
-    private CommandSpec(Builder<C, A> b) {
-        if (b.handler == null) {
-            throw new IllegalStateException("CommandSpec missing handler for " + b.id);
-        }
-        this.id = b.id;
-        this.aggregateType = b.aggregateType;
-        this.handler = b.handler;
-        this.deps = b.deps != null ? b.deps : Deps.empty();
-        this.idFn = b.idFn;
+    private CommandSpec(
+            CommandId<C> id,
+            Class<A> aggregateType,
+            CommandHandler<C, A> handler,
+            Deps<C> deps,
+            BiFunction<Context, C, UUID> idFn) {
+        this.id = id;
+        this.aggregateType = aggregateType;
+        this.handler = handler;
+        this.deps = deps;
+        this.idFn = idFn;
     }
 
-    public static <C extends Command, A extends Aggregate> Builder<C, A> builder(
-            CommandId<C> id, Class<A> aggregateType) {
-        return new Builder<>(id, aggregateType);
+    public static <C extends Command, A extends Aggregate> Init<C, A> builder(CommandId<C> id, Class<A> aggregateType) {
+        return new StagedBuilder<>(id, aggregateType);
     }
 
     public CommandId<C> id() {
@@ -48,36 +49,55 @@ public final class CommandSpec<C extends Command, A extends Aggregate> {
         return Optional.ofNullable(idFn);
     }
 
-    public static final class Builder<C extends Command, A extends Aggregate> {
+    /** First stage — a handler is required before anything else can be set. */
+    public interface Init<C extends Command, A extends Aggregate> {
+        Builder<C, A> handler(CommandHandler<C, A> handler);
+    }
+
+    /** Second stage — optionals and build. */
+    public interface Builder<C extends Command, A extends Aggregate> {
+        Builder<C, A> deps(Deps<C> deps);
+
+        Builder<C, A> idFn(BiFunction<Context, C, UUID> idFn);
+
+        CommandSpec<C, A> build();
+    }
+
+    private static final class StagedBuilder<C extends Command, A extends Aggregate>
+            implements Init<C, A>, Builder<C, A> {
 
         private final CommandId<C> id;
         private final Class<A> aggregateType;
         private CommandHandler<C, A> handler;
-        private Deps<C> deps;
+        private Deps<C> deps = Deps.empty();
         private BiFunction<Context, C, UUID> idFn;
 
-        private Builder(CommandId<C> id, Class<A> aggregateType) {
+        StagedBuilder(CommandId<C> id, Class<A> aggregateType) {
             this.id = id;
             this.aggregateType = aggregateType;
         }
 
+        @Override
         public Builder<C, A> handler(CommandHandler<C, A> handler) {
             this.handler = handler;
             return this;
         }
 
-        public Builder<C, A> idFn(BiFunction<Context, C, UUID> idFn) {
-            this.idFn = idFn;
-            return this;
-        }
-
+        @Override
         public Builder<C, A> deps(Deps<C> deps) {
             this.deps = deps;
             return this;
         }
 
+        @Override
+        public Builder<C, A> idFn(BiFunction<Context, C, UUID> idFn) {
+            this.idFn = idFn;
+            return this;
+        }
+
+        @Override
         public CommandSpec<C, A> build() {
-            return new CommandSpec<>(this);
+            return new CommandSpec<>(id, aggregateType, handler, deps, idFn);
         }
     }
 }

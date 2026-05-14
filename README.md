@@ -40,15 +40,15 @@ flowchart LR
 The whole library hinges on one idea: **the registration key for a command is a typed singleton, not a string**.
 
 ```java
-public static final CommandId<PlaceOrder> PLACE_ORDER =
-    CommandId.of("place-order", PlaceOrder.class);
+public static final CommandId<PlaceOrderCommand> PLACE_ORDER =
+    CommandId.of("place-order", PlaceOrderCommand.class);
 ```
 
-`PLACE_ORDER` is a `CommandId<PlaceOrder>` — its type parameter knows which record this id is for. Every other piece of the framework inherits that knowledge:
+`PLACE_ORDER` is a `CommandId<PlaceOrderCommand>` — its type parameter knows which record this id is for. Every other piece of the framework inherits that knowledge:
 
 ```java
-app.regCmd(CommandSpec.builder(OrderIds.PLACE_ORDER, OrderAggregate.class)
-    .handler(new UpdateOrderHandler())   // ❌ compile error: not CommandHandler<PlaceOrder, ?>
+m.regCmd(OrderIds.PLACE_ORDER, spec -> spec
+    .handler(new ShipOrderHandler())     // ❌ compile error: not CommandHandler<PlaceOrderCommand, ?>
     .build());
 ```
 
@@ -64,10 +64,10 @@ The same trick is applied to `EventId<E>`, `QueryId<Q, R>` (response type is par
 
 | | What it is | Naming | Implementation |
 |---|---|---|---|
-| **Command** | A request to do something | Imperative: `PlaceOrder` | `record … implements Command` |
-| **Event** | A fact that happened | Past tense: `OrderPlaced` | `record … implements Event` |
-| **Aggregate** | Folded state of one entity | Noun: `OrderAggregate` | `record … implements Aggregate` |
-| **Query** | A read request | `Get*`, `List*`, `Find*` | `record … implements Query` |
+| **Command** | A request to do something | Imperative + `Command` suffix: `PlaceOrderCommand` | `record … implements Command` |
+| **Event** | A fact that happened | Past tense + `Event` suffix: `OrderPlacedEvent` | `record … implements Event` |
+| **Aggregate** | Folded state of one entity | Noun + `Aggregate` suffix: `OrderAggregate` | `record … implements Aggregate` |
+| **Query** | A read request | `Get*Query` / `List*Query` / `Find*Query` | `record … implements Query` |
 | **Effect** | Follow-up commands after events | `<Event>Effect` | `class … implements EventFxHandler<E>` |
 
 ### Command lifecycle
@@ -97,7 +97,7 @@ sequenceDiagram
 
 ### Heterogeneous, typed `Context`
 
-The context flowing through handlers is a heterogeneous map keyed by `Dep<?, T>` — Joshua Bloch's [type-safe heterogeneous container](https://docs.oracle.com/javase/specs/jls/se21/html/jls-4.html#:~:text=heterogeneous), but with the key's `T` baked into the lookup:
+The context flowing through handlers is a heterogeneous map keyed by `Dep<?, T>`:
 
 ```java
 public interface Context {
@@ -108,6 +108,30 @@ public interface Context {
 ```java
 Customer customer = ctx.get(OrderDeps.CUSTOMER);   // returns Customer
 Product   product = ctx.get(OrderDeps.PRODUCT);    // returns Product
+```
+
+### Modules group everything per aggregate
+
+A module fixes the aggregate type once, so commands and events inside don't repeat `OrderAggregate.class`:
+
+```java
+Application app = Application.builder("order-svc")
+    .module(OrderAggregate.class, OrderModule::register)
+    .build();
+```
+
+Inside the module, every `regCmd` and `regEvent` is implicitly bound to `OrderAggregate`. One module per aggregate.
+
+### Staged `CommandSpec` builder
+
+`CommandSpec.builder(...)` returns an `Init` stage that *only* exposes `.handler(...)`. After the handler is set, you get a `Builder` with the optional `.deps(...)`, `.idFn(...)`, and `.build()` — so the compiler forbids building a spec without a handler.
+
+```java
+m.regCmd(OrderIds.PLACE_ORDER, spec -> spec
+    .handler(new PlaceOrderHandler())   // Init → Builder
+    .deps(...)                          // optional
+    .idFn(...)                          // optional
+    .build());                          // returns CommandSpec<PlaceOrderCommand, OrderAggregate>
 ```
 
 ---
@@ -121,55 +145,55 @@ A realistic — if simplified — order processing service that exercises every 
 ```
 order/
 ├── command/        # records that drive writes + their handlers
-│   ├── PlaceOrder.java             ─┐
-│   ├── PlaceOrderHandler.java      ─┘ command + handler co-located
-│   ├── ConfirmPayment.java         ─┐
-│   ├── ConfirmPaymentHandler.java  ─┘
-│   ├── CancelOrder.java
+│   ├── PlaceOrderCommand.java         ─┐
+│   ├── PlaceOrderHandler.java         ─┘ command + handler co-located
+│   ├── ConfirmPaymentCommand.java     ─┐
+│   ├── ConfirmPaymentHandler.java     ─┘
+│   ├── CancelOrderCommand.java
 │   ├── CancelOrderHandler.java
-│   ├── ShipOrder.java
+│   ├── ShipOrderCommand.java
 │   ├── ShipOrderHandler.java
-│   └── NotifyCustomer.java         (foreign cmd targeted by an effect)
+│   └── NotifyCustomerCommand.java     (foreign cmd targeted by an effect)
 │
 ├── event/          # sealed event hierarchy
-│   ├── OrderEvent.java             (sealed interface)
-│   ├── OrderPlaced.java
-│   ├── PaymentConfirmed.java
-│   ├── OrderCancelled.java
-│   └── OrderShipped.java
+│   ├── OrderEvent.java                (sealed interface)
+│   ├── OrderPlacedEvent.java
+│   ├── PaymentConfirmedEvent.java
+│   ├── OrderCancelledEvent.java
+│   └── OrderShippedEvent.java
 │
 ├── query/          # read requests
-│   ├── GetOrder.java               (local — answered by this service)
-│   ├── GetCustomer.java            (remote — answered by customer-svc)
-│   └── GetProduct.java             (remote — answered by catalog-svc)
+│   ├── GetOrderQuery.java             (local — answered by this service)
+│   ├── GetCustomerQuery.java          (remote — answered by customer-svc)
+│   └── GetProductQuery.java           (remote — answered by catalog-svc)
 │
 ├── effect/         # one class per event → side-effect mapping
-│   ├── OrderPlacedEffect.java      (→ notification)
-│   ├── PaymentConfirmedEffect.java (→ chain ShipOrder locally)
-│   └── OrderShippedEffect.java     (→ notification)
+│   ├── OrderPlacedEffect.java         (→ notification)
+│   ├── PaymentConfirmedEffect.java    (→ chain ShipOrderCommand locally)
+│   └── OrderShippedEffect.java        (→ notification)
 │
 ├── Customer.java   Product.java   Money.java   OrderStatus.java
 ├── OrderAggregate.java
 ├── OrderIds.java   OrderDeps.java   Services.java
-└── OrderModule.java                (the .register(builder) entry point)
+└── OrderModule.java                   (configures Module<OrderAggregate>)
 ```
 
 ### Commands as plain records
 
-Each command is a record implementing `Command`. No marker interfaces, no inheritance hierarchy — the type system tracks each command independently.
+Each command is a record implementing `Command`. The `Command` suffix keeps intent visible at every call site.
 
 ```java
-public record PlaceOrder(UUID id, UUID customerId, UUID productId, int quantity) implements Command {}
-public record ConfirmPayment(UUID id, UUID orderId, Money amount)                  implements Command {}
-public record CancelOrder(UUID id, UUID orderId, String reason)                    implements Command {}
-public record ShipOrder(UUID id, UUID orderId, String trackingNumber)              implements Command {}
+public record PlaceOrderCommand(UUID id, UUID customerId, UUID productId, int quantity) implements Command {}
+public record ConfirmPaymentCommand(UUID id, UUID orderId, Money amount)                  implements Command {}
+public record CancelOrderCommand(UUID id, UUID orderId, String reason)                    implements Command {}
+public record ShipOrderCommand(UUID id, UUID orderId, String trackingNumber)              implements Command {}
 ```
 
 ### Events form a sealed hierarchy
 
 ```java
 public sealed interface OrderEvent extends Event
-        permits OrderPlaced, PaymentConfirmed, OrderCancelled, OrderShipped {}
+        permits OrderPlacedEvent, PaymentConfirmedEvent, OrderCancelledEvent, OrderShippedEvent {}
 ```
 
 This is the second key win for the type system: the aggregate's `applyEvent` becomes a `switch` with **no `default`** — adding a new event variant turns into a compile error everywhere it needs to be handled.
@@ -177,27 +201,27 @@ This is the second key win for the type system: the aggregate's `applyEvent` bec
 ```java
 public OrderAggregate applyEvent(OrderEvent event) {
     return switch (event) {
-        case OrderPlaced e        -> new OrderAggregate(e.id(), version + 1, OrderStatus.PLACED, …);
-        case PaymentConfirmed _   -> new OrderAggregate(id, version + 1, OrderStatus.PAID,    …);
-        case OrderCancelled _     -> new OrderAggregate(id, version + 1, OrderStatus.CANCELLED, …);
-        case OrderShipped e       -> new OrderAggregate(id, version + 1, OrderStatus.SHIPPED, …, e.trackingNumber());
+        case OrderPlacedEvent e        -> new OrderAggregate(e.id(), version + 1, OrderStatus.PLACED, …);
+        case PaymentConfirmedEvent _   -> new OrderAggregate(id, version + 1, OrderStatus.PAID,    …);
+        case OrderCancelledEvent _     -> new OrderAggregate(id, version + 1, OrderStatus.CANCELLED, …);
+        case OrderShippedEvent e       -> new OrderAggregate(id, version + 1, OrderStatus.SHIPPED, …, e.trackingNumber());
         // no default needed — sealed type, exhaustive switch
     };
 }
 ```
 
-`case PaymentConfirmed _` uses unnamed patterns (Java 22+) when the variant's fields aren't needed.
+`case PaymentConfirmedEvent _` uses unnamed patterns (Java 22+) when the variant's fields aren't needed.
 
 The aggregate's state machine — implicit in the `switch` above — is:
 
 ```mermaid
 stateDiagram-v2
     [*] --> NEW
-    NEW --> PLACED: OrderPlaced
-    PLACED --> PAID: PaymentConfirmed
-    PLACED --> CANCELLED: OrderCancelled
-    PAID --> SHIPPED: OrderShipped
-    PAID --> CANCELLED: OrderCancelled
+    NEW --> PLACED: OrderPlacedEvent
+    PLACED --> PAID: PaymentConfirmedEvent
+    PLACED --> CANCELLED: OrderCancelledEvent
+    PAID --> SHIPPED: OrderShippedEvent
+    PAID --> CANCELLED: OrderCancelledEvent
     SHIPPED --> [*]
     CANCELLED --> [*]
 ```
@@ -209,13 +233,13 @@ A `Dep<Q, T>` is *just a typed key* — a name, a `QueryId`, and (for remote dep
 ```java
 public final class OrderDeps {
 
-    public static final Dep<GetCustomer, Customer> CUSTOMER =
+    public static final Dep<GetCustomerQuery, Customer> CUSTOMER =
         Dep.remote("customer", Services.CUSTOMER_SVC, OrderIds.GET_CUSTOMER);
 
-    public static final Dep<GetProduct, Product> PRODUCT =
+    public static final Dep<GetProductQuery, Product> PRODUCT =
         Dep.remote("product", Services.CATALOG_SVC, OrderIds.GET_PRODUCT);
 
-    public static final Dep<GetOrder, OrderAggregate> CURRENT_ORDER =
+    public static final Dep<GetOrderQuery, OrderAggregate> CURRENT_ORDER =
         Dep.local("order", OrderIds.GET_ORDER);
 }
 ```
@@ -225,34 +249,34 @@ The `<Q, T>` type parameters say: this dep produces a query of type `Q` and yiel
 The **how-to-build-the-query** part is provided at registration time, alongside the command:
 
 ```java
-.deps(Deps.<PlaceOrder>builder()
-        .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomer(cmd.customerId()))
-        .reg(OrderDeps.PRODUCT,  (_, cmd) -> new GetProduct(cmd.productId()))
+.deps(Deps.<PlaceOrderCommand>builder()
+        .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
+        .reg(OrderDeps.PRODUCT,  (_, cmd) -> new GetProductQuery(cmd.productId()))
         .build())
 ```
 
 Three guarantees fall out of this split:
 
-1. **The lambda is locked to the command type.** `Deps.<PlaceOrder>builder()` parameterises the builder by `PlaceOrder`, so the lambda sees `cmd` as a `PlaceOrder` and can call its record components directly. No marker interfaces needed — the call-site type witness does the work.
-2. **The query produced is type-checked against the dep's `Q`.** `OrderDeps.CUSTOMER` is `Dep<GetCustomer, Customer>`, so `.reg(CUSTOMER, fn)` only accepts a lambda returning `GetCustomer`.
+1. **The lambda is locked to the command type.** `Deps.<PlaceOrderCommand>builder()` parameterises the builder by `PlaceOrderCommand`, so the lambda sees `cmd` as a `PlaceOrderCommand` and can call its record components directly. No marker interfaces needed — the call-site type witness does the work.
+2. **The query produced is type-checked against the dep's `Q`.** `OrderDeps.CUSTOMER` is `Dep<GetCustomerQuery, Customer>`, so `.reg(CUSTOMER, fn)` only accepts a lambda returning `GetCustomerQuery`.
 3. **The result stored in `ctx` carries `T`.** `ctx.get(OrderDeps.CUSTOMER)` returns `Customer` with no cast.
 
 Reusing the same dep across commands with different shapes is just a different lambda:
 
 ```java
-// PlaceOrder has a customerId field directly
-.reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomer(cmd.customerId()))
+// PlaceOrderCommand has a customerId field directly
+.reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
 
-// SendInvoice has a billingCustomerId field
-.reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomer(cmd.billingCustomerId()))
+// SendInvoiceCommand has a billingCustomerId field
+.reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.billingCustomerId()))
 ```
 
 ### Handlers are tiny, typed classes
 
 ```java
-public final class PlaceOrderHandler implements CommandHandler<PlaceOrder, OrderAggregate> {
+public final class PlaceOrderHandler implements CommandHandler<PlaceOrderCommand, OrderAggregate> {
     @Override
-    public HandlerResult<OrderAggregate> handle(Context ctx, PlaceOrder cmd) {
+    public HandlerResult<OrderAggregate> handle(Context ctx, PlaceOrderCommand cmd) {
         Customer customer = ctx.get(OrderDeps.CUSTOMER);   // typed!
         Product  product  = ctx.get(OrderDeps.PRODUCT);    // typed!
 
@@ -261,7 +285,7 @@ public final class PlaceOrderHandler implements CommandHandler<PlaceOrder, Order
         }
 
         Money total = product.price().times(cmd.quantity());
-        return HandlerResult.of(new OrderPlaced(cmd.id(), customer.id(), product.id(), cmd.quantity(), total));
+        return HandlerResult.of(new OrderPlacedEvent(cmd.id(), customer.id(), product.id(), cmd.quantity(), total));
     }
 }
 ```
@@ -269,20 +293,20 @@ public final class PlaceOrderHandler implements CommandHandler<PlaceOrder, Order
 ### Effects produce more commands
 
 ```java
-public final class PaymentConfirmedEffect implements EventFxHandler<PaymentConfirmed> {
+public final class PaymentConfirmedEffect implements EventFxHandler<PaymentConfirmedEvent> {
     @Override
-    public List<CommandEnvelope<?>> fx(Context ctx, PaymentConfirmed event) {
+    public List<CommandEnvelope<?>> fx(Context ctx, PaymentConfirmedEvent event) {
         return List.of(CommandEnvelope.local(
-            new ShipOrder(UUID.randomUUID(), event.id(), "TRACK-" + event.id())));
+            new ShipOrderCommand(UUID.randomUUID(), event.id(), "TRACK-" + event.id())));
     }
 }
 
-public final class OrderPlacedEffect implements EventFxHandler<OrderPlaced> {
+public final class OrderPlacedEffect implements EventFxHandler<OrderPlacedEvent> {
     @Override
-    public List<CommandEnvelope<?>> fx(Context ctx, OrderPlaced event) {
+    public List<CommandEnvelope<?>> fx(Context ctx, OrderPlacedEvent event) {
         return List.of(CommandEnvelope.on(
             Services.NOTIFICATION_SVC,
-            new NotifyCustomer(UUID.randomUUID(), event.customerId(), "Order placed: " + event.id())));
+            new NotifyCustomerCommand(UUID.randomUUID(), event.customerId(), "Order placed: " + event.id())));
     }
 }
 ```
@@ -299,54 +323,71 @@ sequenceDiagram
     participant Catalog as catalog-svc
     participant Notif as notification-svc
 
-    Client->>Order: PlaceOrder
-    Order->>+Customer: GetCustomer (remote dep)
+    Client->>Order: PlaceOrderCommand
+    Order->>+Customer: GetCustomerQuery (remote dep)
     Customer-->>-Order: Customer
-    Order->>+Catalog: GetProduct (remote dep)
+    Order->>+Catalog: GetProductQuery (remote dep)
     Catalog-->>-Order: Product
-    Note right of Order: emits OrderPlaced
-    Order--)Notif: fx → NotifyCustomer
+    Note right of Order: emits OrderPlacedEvent
+    Order--)Notif: fx → NotifyCustomerCommand
 
-    Client->>Order: ConfirmPayment
-    Note right of Order: GetOrder (local dep)<br/>emits PaymentConfirmed
-    Order--)Order: fx → ShipOrder
+    Client->>Order: ConfirmPaymentCommand
+    Note right of Order: GetOrderQuery (local dep)<br/>emits PaymentConfirmedEvent
+    Order--)Order: fx → ShipOrderCommand
 
-    Note right of Order: emits OrderShipped
-    Order--)Notif: fx → NotifyCustomer
+    Note right of Order: emits OrderShippedEvent
+    Order--)Notif: fx → NotifyCustomerCommand
 ```
 
 ### Wiring it all up: `OrderModule`
 
+The module's `register` function takes a `Module<OrderAggregate>` and returns it after adding everything to it. No `OrderAggregate.class` is repeated — the module already knows.
+
 ```java
 public final class OrderModule {
 
-    public static Application.Builder register(Application.Builder app) {
-        return app
-            .regCmd(CommandSpec.builder(OrderIds.PLACE_ORDER, OrderAggregate.class)
+    public static Module<OrderAggregate> register(Module<OrderAggregate> m) {
+        return m
+            .regCmd(OrderIds.PLACE_ORDER, spec -> spec
                     .handler(new PlaceOrderHandler())
-                    .deps(Deps.<PlaceOrder>builder()
-                            .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomer(cmd.customerId()))
-                            .reg(OrderDeps.PRODUCT,  (_, cmd) -> new GetProduct(cmd.productId()))
+                    .deps(Deps.<PlaceOrderCommand>builder()
+                            .reg(OrderDeps.CUSTOMER, (_, cmd) -> new GetCustomerQuery(cmd.customerId()))
+                            .reg(OrderDeps.PRODUCT,  (_, cmd) -> new GetProductQuery(cmd.productId()))
                             .build())
                     .build())
-            .regCmd(CommandSpec.builder(OrderIds.CONFIRM_PAYMENT, OrderAggregate.class)
+            .regCmd(OrderIds.CONFIRM_PAYMENT, spec -> spec
                     .handler(new ConfirmPaymentHandler())
-                    .deps(Deps.<ConfirmPayment>builder()
-                            .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrder(cmd.orderId()))
+                    .deps(Deps.<ConfirmPaymentCommand>builder()
+                            .reg(OrderDeps.CURRENT_ORDER, (_, cmd) -> new GetOrderQuery(cmd.orderId()))
                             .build())
-                    .idFn((_, cmd) -> cmd.orderId())            // command id ≠ aggregate id
+                    .idFn((_, cmd) -> cmd.orderId())                  // command id ≠ aggregate id
                     .build())
-            .regCmd(/* CancelOrder */)
-            .regCmd(/* ShipOrder */)
-            .regEvent(OrderIds.ORDER_PLACED,       OrderAggregate.class, OrderModule::apply)
-            .regEvent(OrderIds.PAYMENT_CONFIRMED,  OrderAggregate.class, OrderModule::apply)
-            .regEvent(OrderIds.ORDER_CANCELLED,    OrderAggregate.class, OrderModule::apply)
-            .regEvent(OrderIds.ORDER_SHIPPED,      OrderAggregate.class, OrderModule::apply)
+            .regCmd(/* CancelOrderCommand */)
+            .regCmd(/* ShipOrderCommand */)
+            .regEvent(OrderIds.ORDER_PLACED,       OrderModule::apply)
+            .regEvent(OrderIds.PAYMENT_CONFIRMED,  OrderModule::apply)
+            .regEvent(OrderIds.ORDER_CANCELLED,    OrderModule::apply)
+            .regEvent(OrderIds.ORDER_SHIPPED,      OrderModule::apply)
             .regEventFx(OrderIds.ORDER_PLACED,      new OrderPlacedEffect())
             .regEventFx(OrderIds.PAYMENT_CONFIRMED, new PaymentConfirmedEffect())
             .regEventFx(OrderIds.ORDER_SHIPPED,     new OrderShippedEffect());
     }
+
+    private static OrderAggregate apply(OrderAggregate agg, OrderEvent event) {
+        OrderAggregate base = agg == null ? OrderAggregate.initial(event.id()) : agg;
+        return base.applyEvent(event);
+    }
 }
+```
+
+Plugged into the app:
+
+```java
+Application app = Application.builder("order-svc")
+    .module(OrderAggregate.class, OrderModule::register)
+    .regQuery(OrderIds.GET_ORDER, getOrderHandler)
+    .remoteResolver(remoteResolver)
+    .build();
 ```
 
 ### Tests show typing in action
@@ -360,18 +401,18 @@ void confirmPaymentUsesIdFnAndProducesShipFx() {
 
     Application app = build(
         /* GetOrder local handler returns the placed order */ (_, _) -> placed,
-        /* no remote calls expected           */              (_, _) -> { throw new IllegalStateException(); });
+        /* no remote calls expected                        */ (_, _) -> { throw new IllegalStateException(); });
 
     CommandResponse resp = app.dispatch(
-        new ConfirmPayment(UUID.randomUUID(), orderId, Money.usd(2000)),
+        new ConfirmPaymentCommand(UUID.randomUUID(), orderId, Money.usd(2000)),
         RequestMeta.newRequest());
 
     var success   = assertInstanceOf(CommandResponse.Success.class, resp);
-    var confirmed = assertInstanceOf(PaymentConfirmed.class, success.events().get(0));
+    var confirmed = assertInstanceOf(PaymentConfirmedEvent.class, success.events().get(0));
     assertEquals(orderId, confirmed.id());
 
     var fx   = success.effects().getFirst();
-    var ship = assertInstanceOf(ShipOrder.class, fx.command());     // typed!
+    var ship = assertInstanceOf(ShipOrderCommand.class, fx.command());     // typed!
     assertEquals(orderId, ship.orderId());
 }
 ```
@@ -395,12 +436,13 @@ void confirmPaymentUsesIdFnAndProducesShipFx() {
 
 | edd-core | edd-java |
 |---|---|
-| `(edd/reg-cmd ctx :create-user handler :deps {…} :id-fn …)` | `app.regCmd(CommandSpec.builder(CREATE_USER, …).handler(…).deps(Deps.<…>builder().reg(…).build()).idFn(…).build())` |
-| `(edd/reg-event ctx :user-created (fn [agg evt] …))` | `app.regEvent(USER_CREATED, UserAggregate.class, (agg, evt) -> …)` |
-| `(edd/reg-event-fx ctx :user-created (fn [ctx evt] …))` | `app.regEventFx(USER_CREATED, new UserCreatedEffect())` |
-| `(edd/reg-query ctx :get-user handler)` | `app.regQuery(GET_USER, handler)` |
-| Map `{:cmd-id :create-user :id … :attrs {…}}` | `record CreateUser(UUID id, …) implements Command` |
-| Keyword `:create-user` | `CommandId<CreateUser> CREATE_USER` |
+| `(edd/reg-cmd ctx :create-user handler :deps {…} :id-fn …)` | `m.regCmd(CREATE_USER, spec -> spec.handler(…).deps(Deps.<…>builder().reg(…).build()).idFn(…).build())` |
+| `(edd/reg-event ctx :user-created (fn [agg evt] …))` | `m.regEvent(USER_CREATED, (agg, evt) -> …)` |
+| `(edd/reg-event-fx ctx :user-created (fn [ctx evt] …))` | `m.regEventFx(USER_CREATED, new UserCreatedEffect())` |
+| `(edd/reg-query ctx :get-user handler)` | `m.regQuery(GET_USER, handler)` |
+| Module composition: `(comp process-order/register payment/register)` | `Application.builder(...).module(A.class, MyModule::register)` |
+| Map `{:cmd-id :create-user :id … :attrs {…}}` | `record CreateUserCommand(UUID id, …) implements Command` |
+| Keyword `:create-user` | `CommandId<CreateUserCommand> CREATE_USER` |
 | `(:user ctx)` after `:deps [:user dep-fn]` | `ctx.get(USER_DEP)` returning typed `User` |
 | Malli schema `[:map [:cmd-id [:= :…]]]` | The record's component types |
 
@@ -415,8 +457,9 @@ The biggest semantic shift: edd-core dispatches on the `:cmd-id` keyword inside 
 - [x] Typed `CommandId<C>`, `EventId<E>`, `QueryId<Q, R>` registries
 - [x] `Dep<Q, T>` typed keys with `Dep.local(...)` and `Dep.remote(...)` factories
 - [x] `Deps.<C>builder().reg(KEY, fn).build()` wiring at registration time
-- [x] `Context.get(Dep)` heterogeneous typed lookup
-- [x] `CommandSpec<C, A>` builder with handler / deps / `idFn`
+- [x] `Context.get(Dep)` heterogeneous typed map
+- [x] **Staged `CommandSpec.builder`** — `.handler(...)` is required before `.deps(...)`/`.idFn(...)`/`.build()` are visible
+- [x] **`Application.Builder.module(Class<A>, ...)`** — aggregate type pinned per module, one module per aggregate
 - [x] Sealed `HandlerResult` (`Events` | `Error`) and `CommandResponse` (`Success` | `Failure`)
 - [x] `regEventFx` + `CommandEnvelope` for cross-service effects
 - [x] `RemoteResolver` seam for remote query resolution
@@ -465,11 +508,13 @@ edd-java/
     ├── main/java/com/alphaprosoft/edd/
     │   ├── Command.java   Event.java   Aggregate.java   Query.java
     │   ├── CommandId.java   EventId.java   QueryId.java   Dep.java
+    │   ├── Deps.java                          (per-command wiring builder)
     │   ├── CommandHandler.java   EventHandler.java   QueryHandler.java
     │   ├── EventFxHandler.java
     │   ├── HandlerResult.java                 (sealed)
     │   ├── CommandResponse.java               (sealed)
-    │   ├── CommandSpec.java
+    │   ├── CommandSpec.java                   (staged builder: Init → Builder)
+    │   ├── Module.java                        (aggregate-scoped registrations)
     │   ├── Context.java   ContextImpl.java
     │   ├── CommandEnvelope.java
     │   ├── RequestMeta.java   Service.java   RemoteResolver.java
@@ -480,12 +525,12 @@ edd-java/
         ├── Customer.java   Product.java   Money.java   OrderStatus.java
         ├── OrderAggregate.java
         ├── Services.java   OrderIds.java   OrderDeps.java
-        ├── OrderModule.java
-        └── OrderModuleTest.java                (8 tests)
+        ├── OrderModule.java                (configures Module<OrderAggregate>)
+        └── OrderModuleTest.java             (8 tests)
 ```
 
 ---
 
 ## Credits
 
-Designed after Robert Pofuk's [edd-core](https://github.com/alpha-prosoft/edd-core) (Clojure). All concepts — commands, events, aggregates, deps, id-fn, event-fx — come from that project. The Java type-system choices (typed-enum IDs, sealed events, `Dep<Q, T>` heterogeneous map keys, `Deps<C>` for wiring) are what make a port worthwhile in a language without runtime data-driven dispatch.
+Designed after Robert Pofuk's [edd-core](https://github.com/alpha-prosoft/edd-core) (Clojure). All concepts — commands, events, aggregates, deps, id-fn, event-fx — come from that project. The Java type-system choices (typed-enum IDs, sealed events, `Dep<Q, T>` heterogeneous map keys, `Deps<C>` for wiring, `Module<A>` for aggregate scoping, staged builder for `CommandSpec`) are what make a port worthwhile in a language without runtime data-driven dispatch.

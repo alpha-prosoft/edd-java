@@ -4,4 +4,4 @@ import java.util.UUID;
 
 import com.alphaprosoft.edd.Query;
 
-public record GetCustomer(UUID id) implements Query {}
+public record GetProductQuery(UUID id) implements Query {}
