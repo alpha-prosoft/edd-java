@@ -12,7 +12,7 @@ public final class ShipOrderHandler implements CommandHandler<ShipOrderCommand, 
 
     @Override
     public HandlerResult<OrderAggregate> handle(Context ctx, ShipOrderCommand cmd) {
-        OrderAggregate order = ctx.get(OrderDeps.CURRENT_ORDER);
+        OrderAggregate order = ctx.getDeps(OrderDeps.CURRENT_ORDER);
         if (order.status() != OrderStatus.PAID) {
             return HandlerResult.error("not-paid");
         }

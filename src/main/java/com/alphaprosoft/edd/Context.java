@@ -4,9 +4,7 @@ import java.util.UUID;
 
 public interface Context {
 
-    <T> T get(Dep<?, T> key);
-
-    boolean has(Dep<?, ?> key);
+    <T> T getDeps(Dep<?, T> key);
 
     UUID requestId();
 

@@ -14,8 +14,8 @@ public final class PlaceOrderHandler implements CommandHandler<PlaceOrderCommand
 
     @Override
     public HandlerResult<OrderAggregate> handle(Context ctx, PlaceOrderCommand cmd) {
-        Customer customer = ctx.get(OrderDeps.CUSTOMER);
-        Product product = ctx.get(OrderDeps.PRODUCT);
+        Customer customer = ctx.getDeps(OrderDeps.CUSTOMER);
+        Product product = ctx.getDeps(OrderDeps.PRODUCT);
 
         if (product.stock() < cmd.quantity()) {
             return HandlerResult.error("insufficient-stock");

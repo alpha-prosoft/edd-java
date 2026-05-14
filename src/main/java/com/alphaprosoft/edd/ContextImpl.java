@@ -3,10 +3,20 @@ package com.alphaprosoft.edd;
 import java.util.Map;
 import java.util.UUID;
 
-record ContextImpl(Map<String, Object> deps, UUID requestId, UUID interactionId) implements Context {
+final class ContextImpl implements Context {
+
+    private final Map<String, Object> deps;
+    private final UUID requestId;
+    private final UUID interactionId;
+
+    ContextImpl(Map<String, Object> deps, UUID requestId, UUID interactionId) {
+        this.deps = deps;
+        this.requestId = requestId;
+        this.interactionId = interactionId;
+    }
 
     @Override
-    public <T> T get(Dep<?, T> key) {
+    public <T> T getDeps(Dep<?, T> key) {
         if (!deps.containsKey(key.name())) {
             throw new IllegalStateException("Dep not resolved: " + key.name());
         }
@@ -16,7 +26,12 @@ record ContextImpl(Map<String, Object> deps, UUID requestId, UUID interactionId)
     }
 
     @Override
-    public boolean has(Dep<?, ?> key) {
-        return deps.containsKey(key.name());
+    public UUID requestId() {
+        return requestId;
+    }
+
+    @Override
+    public UUID interactionId() {
+        return interactionId;
     }
 }

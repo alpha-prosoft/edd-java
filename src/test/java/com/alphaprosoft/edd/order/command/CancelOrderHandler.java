@@ -11,7 +11,7 @@ public final class CancelOrderHandler implements CommandHandler<CancelOrderComma
 
     @Override
     public HandlerResult<OrderAggregate> handle(Context ctx, CancelOrderCommand cmd) {
-        OrderAggregate order = ctx.get(OrderDeps.CURRENT_ORDER);
+        OrderAggregate order = ctx.getDeps(OrderDeps.CURRENT_ORDER);
         return switch (order.status()) {
             case PLACED, PAID -> HandlerResult.of(new OrderCancelledEvent(cmd.orderId(), cmd.reason()));
             case SHIPPED -> HandlerResult.error("already-shipped");

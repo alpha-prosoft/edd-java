@@ -12,7 +12,7 @@ public final class ConfirmPaymentHandler implements CommandHandler<ConfirmPaymen
 
     @Override
     public HandlerResult<OrderAggregate> handle(Context ctx, ConfirmPaymentCommand cmd) {
-        OrderAggregate order = ctx.get(OrderDeps.CURRENT_ORDER);
+        OrderAggregate order = ctx.getDeps(OrderDeps.CURRENT_ORDER);
         if (order.status() != OrderStatus.PLACED) {
             return HandlerResult.error("invalid-status");
         }

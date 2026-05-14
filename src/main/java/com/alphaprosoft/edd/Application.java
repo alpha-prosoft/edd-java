@@ -1,7 +1,6 @@
 package com.alphaprosoft.edd;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -124,7 +123,7 @@ public final class Application {
         if (reg == null) {
             throw new IllegalStateException("No query handler registered for " + id);
         }
-        Context ctx = new ContextImpl(new HashMap<>(), meta.requestId(), meta.interactionId());
+        Context ctx = new ContextImpl(Map.of(), meta.requestId(), meta.interactionId());
         return ((QueryHandler) reg.handler()).handle(ctx, q);
     }
 
