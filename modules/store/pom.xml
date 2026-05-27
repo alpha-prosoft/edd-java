@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.alphaprosoft</groupId>
+        <artifactId>edd-java-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>edd-java-store</artifactId>
+    <packaging>pom</packaging>
+
+    <name>edd-java-store</name>
+    <description>Event-store and view-store implementations.</description>
+
+    <modules>
+        <module>edd-store-compliance</module>
+        <module>edd-event-store-memory</module>
+        <module>edd-view-store-memory</module>
+        <module>edd-event-store-postgres</module>
+        <module>edd-view-store-postgres</module>
+        <module>edd-event-store-dynamodb</module>
+        <module>edd-view-store-s3</module>
+    </modules>
+</project>

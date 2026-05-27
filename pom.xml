@@ -6,33 +6,138 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.alphaprosoft</groupId>
-    <artifactId>edd-java</artifactId>
+    <artifactId>edd-java-parent</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <packaging>jar</packaging>
+    <packaging>pom</packaging>
 
-    <name>edd-java</name>
+    <name>edd-java-parent</name>
     <description>Event-driven CQRS framework for Java (Java port of edd-core).</description>
+
+    <modules>
+        <module>modules/edd-java-core</module>
+        <module>modules/edd-java-json</module>
+        <module>modules/edd-java-testkit</module>
+        <module>modules/runtime</module>
+        <module>modules/store</module>
+        <module>modules/demo</module>
+    </modules>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>25</maven.compiler.release>
 
         <junit.version>5.11.4</junit.version>
+        <undertow.version>2.3.10.Final</undertow.version>
+        <jackson.version>2.18.2</jackson.version>
+        <postgresql.version>42.7.5</postgresql.version>
+        <awssdk.version>2.44.12</awssdk.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
-        <spotless-maven-plugin.version>2.43.0</spotless-maven-plugin.version>
+        <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
+        <spotless-maven-plugin.version>2.46.1</spotless-maven-plugin.version>
     </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${junit.version}</version>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${awssdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-java-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-java-undertow</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-java-router</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-java-json</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-java-testkit</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.amazonaws</groupId>
+                <artifactId>aws-lambda-java-core</artifactId>
+                <version>1.4.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.crac</groupId>
+                <artifactId>crac</artifactId>
+                <version>1.5.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-store-compliance</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-event-store-memory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-view-store-memory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-demo-customer-svc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.undertow</groupId>
+                <artifactId>undertow-core</artifactId>
+                <version>${undertow.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>${maven-shade-plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -52,13 +157,11 @@
                 <version>${spotless-maven-plugin.version}</version>
                 <configuration>
                     <java>
-                        <palantirJavaFormat>
-                            <version>2.90.0</version>
-                        </palantirJavaFormat>
+                        <googleJavaFormat>
+                            <version>1.28.0</version>
+                            <style>GOOGLE</style>
+                        </googleJavaFormat>
                         <removeUnusedImports/>
-                        <importOrder>
-                            <order>java,javax,org,com,</order>
-                        </importOrder>
                         <trimTrailingWhitespace/>
                         <endWithNewline/>
                     </java>

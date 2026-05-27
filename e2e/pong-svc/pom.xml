@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.alphaprosoft</groupId>
+        <artifactId>edd-e2e-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>edd-e2e-pong-svc</artifactId>
+
+    <name>edd-e2e-pong-svc</name>
+    <description>pong-svc Lambda: like ping-svc, plus a remote dep on ping-svc resolved over the API via HttpServiceClient.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-e2e-domain</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-java-aws</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-java-undertow</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-event-store-dynamodb</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-view-store-s3</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>pong-svc</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>app</shadedClassifierName>
+                            <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

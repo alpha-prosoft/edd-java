@@ -1,0 +1,43 @@
+# Two edd-java services over HTTP/2. greeter-svc resolves its customer dep
+# from customer-svc across the network.
+#
+#   docker compose up --build
+#   curl -sk --http2 https://localhost:8444/api/command \
+#     -H 'content-type: application/json' \
+#     -d '{"cmdId":"greet-customer","command":{"id":"...","customerId":"..."},"meta":{}}'
+
+services:
+  # Postgres for the store compliance suites. Start it, then run `mvn verify`:
+  # the edd-*-store-postgres tests connect to localhost:5432 (EDD_PG_URL to override)
+  # and are skipped if it isn't reachable.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: edd
+      POSTGRES_PASSWORD: edd
+      POSTGRES_DB: edd
+    ports:
+      - "5432:5432"
+
+  customer-svc:
+    build:
+      context: .
+      args:
+        MODULE_DIR: modules/demo/edd-demo-customer-svc
+    environment:
+      PORT: "8443"
+    ports:
+      - "8443:8443"
+
+  greeter-svc:
+    build:
+      context: .
+      args:
+        MODULE_DIR: modules/demo/edd-demo-greeter-svc
+    environment:
+      PORT: "8443"
+      CUSTOMER_SVC_URL: https://customer-svc:8443
+    ports:
+      - "8444:8443"
+    depends_on:
+      - customer-svc

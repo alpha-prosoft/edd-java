@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      Standalone e2e reactor: NOT part of the root reactor (the root pom does not list it), so
+      `mvn verify` at the repo root never builds or deploys it. It is driven only by e2e/run-e2e.sh,
+      which deploys the CloudFormation stacks and runs the `it` suite against the live API.
+      Parented to edd-java-parent (installed via `mvn install`) to reuse dependency + plugin management.
+    -->
+    <parent>
+        <groupId>com.alphaprosoft</groupId>
+        <artifactId>edd-java-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>edd-e2e-parent</artifactId>
+    <packaging>pom</packaging>
+
+    <name>edd-e2e-parent</name>
+    <description>End-to-end AWS integration test: ping/pong services + router + CloudFormation.</description>
+
+    <modules>
+        <module>domain</module>
+        <module>ping-svc</module>
+        <module>pong-svc</module>
+        <module>it</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-e2e-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-java-aws</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-event-store-dynamodb</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alphaprosoft</groupId>
+                <artifactId>edd-view-store-s3</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>
