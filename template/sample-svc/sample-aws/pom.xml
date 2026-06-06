@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.example</groupId>
+        <artifactId>sample-svc</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>sample-aws</artifactId>
+
+    <!-- DynamoDB event store + S3 view store, served by the AWS Lambda runtime.
+         `mvn package` builds target/sample-lambda.jar (handler com.example.sample.SampleLambda). -->
+    <dependencies>
+        <dependency>
+            <groupId>com.example</groupId>
+            <artifactId>sample-domain</artifactId>
+            <version>${project.parent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-event-store-dynamodb</artifactId>
+            <version>${edd.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-view-store-s3</artifactId>
+            <version>${edd.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-java-aws</artifactId>
+            <version>${edd.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-event-store-memory</artifactId>
+            <version>${edd.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.alphaprosoft</groupId>
+            <artifactId>edd-view-store-memory</artifactId>
+            <version>${edd.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <finalName>sample-lambda</finalName>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

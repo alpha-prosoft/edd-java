@@ -46,6 +46,7 @@ public final class Application {
   private final Telemetry telemetry;
   private final Tracer tracer;
   private final Metrics metrics;
+  private final RetryConfig retryConfig;
 
   private static final RemoteServiceClient NO_REMOTE =
       new RemoteServiceClient() {
@@ -82,6 +83,7 @@ public final class Application {
     this.telemetry = b.telemetry;
     this.tracer = b.tracer;
     this.metrics = b.metrics;
+    this.retryConfig = b.retryConfig;
     // Stores are resolved last: a factory receives this (now identity- and registration-complete)
     // plus the config, so it can derive its service from serviceName(). Factories must not read the
     // store fields being assigned here.
@@ -189,7 +191,13 @@ public final class Application {
   }
 
   /**
-   * The transactional engine: process every command over a shared cache, then commit atomically.
+   * The transactional engine. Dedup + request logging happen once; the actual processing + commit
+   * is retried on {@code concurrent-modification} ({@link OptimisticLockException}) up to the
+   * configured attempts. Each retry builds a <b>fresh</b> {@link RequestCache}, so aggregates are
+   * re-replayed from the now-updated event store — mirroring edd-core's {@code (retry
+   * #(process-commands …) 3)} which clears the request cache between attempts. Identity conflicts
+   * and business rejections are not retried; once retries are exhausted the conflict becomes a
+   * {@code concurrent-modification} failure.
    */
   private List<CommandResponse> dispatchBatch0(
       List<? extends Command> commands, List<RequestMeta> metas) {
@@ -213,6 +221,37 @@ public final class Application {
       return replay;
     }
 
+    // Log each request once (not per retry — the log key is stable and must not be duplicated).
+    for (int i = 0; i < commands.size(); i++) {
+      RequestMeta meta = metas.get(i);
+      telemetry.emit(
+          "command.received",
+          correlation(meta, "command", specFor(commands.get(i)).commandId().id()));
+      eventStore.logRequest(realm, meta.requestId(), meta.breadcrumbs(), commands.get(i));
+    }
+
+    try {
+      return Retry.retry(retryConfig, () -> attemptBatch(commands, metas, realm));
+    } catch (OptimisticLockException e) {
+      // retries exhausted — report the conflict (deliberately not logged as the final response)
+      for (RequestMeta m : metas) {
+        telemetry.emit("command.conflict", correlation(m));
+      }
+      return repeat(
+          metas.size(),
+          new CommandResponse.Failure(
+              "concurrent-modification", Map.of("aggregateId", e.aggregateId().toString())));
+    }
+  }
+
+  /**
+   * One transactional attempt over a fresh cache: process every command, commit events + identities
+   * atomically, project to the view store, and log responses. Throws {@link
+   * OptimisticLockException} so the caller can retry against fresh state; identity conflicts and
+   * rejections return normally (they are not retryable).
+   */
+  private List<CommandResponse> attemptBatch(
+      List<? extends Command> commands, List<RequestMeta> metas, String realm) {
     RequestCache cache = new RequestCache();
     List<StoredEvent> pendingEvents = new ArrayList<>();
     List<Identity> pendingIdentities = new ArrayList<>();
@@ -223,9 +262,6 @@ public final class Application {
       Command cmd = commands.get(i);
       RequestMeta meta = metas.get(i);
       CommandSpec<?, ?> spec = specFor(cmd);
-      telemetry.emit("command.received", correlation(meta, "command", spec.commandId().id()));
-      eventStore.logRequest(realm, meta.requestId(), meta.breadcrumbs(), cmd);
-
       Pending p = processCommand(spec, cmd, meta, cache, pendingEvents, pendingIdentities, touched);
       if (p.failure() != null) {
         // all-or-nothing: nothing has been persisted yet, so simply abort the whole request
@@ -236,15 +272,6 @@ public final class Application {
 
     try {
       eventStore.appendBatch(realm, serviceName, pendingEvents, pendingIdentities);
-    } catch (OptimisticLockException e) {
-      // retryable, deliberately NOT logged as the final response
-      for (RequestMeta m : metas) {
-        telemetry.emit("command.conflict", correlation(m));
-      }
-      return repeat(
-          metas.size(),
-          new CommandResponse.Failure(
-              "concurrent-modification", Map.of("aggregateId", e.aggregateId().toString())));
     } catch (IdentityConflictException e) {
       CommandResponse.Failure f =
           new CommandResponse.Failure("identity-conflict", Map.of("name", e.name()));
@@ -607,9 +634,22 @@ public final class Application {
     private Telemetry telemetry = Telemetry.NONE;
     private Tracer tracer = Tracer.NONE;
     private Metrics metrics = Metrics.NONE;
+    // Default: retry concurrent-modification up to 3 attempts, no backoff (the conflicting writer
+    // has
+    // already committed, so an immediate retry against fresh state typically succeeds).
+    private RetryConfig retryConfig =
+        RetryConfig.builder().maxAttempts(3).retryOn(OptimisticLockException.class).build();
 
     private Builder(String serviceName) {
       this.serviceName = serviceName;
+    }
+
+    /**
+     * Tune the concurrent-modification retry (attempts, backoff). Default: 3 attempts, no backoff.
+     */
+    public Builder retryConfig(RetryConfig retryConfig) {
+      this.retryConfig = Objects.requireNonNull(retryConfig, "retryConfig");
+      return this;
     }
 
     public Builder telemetry(Telemetry telemetry) {

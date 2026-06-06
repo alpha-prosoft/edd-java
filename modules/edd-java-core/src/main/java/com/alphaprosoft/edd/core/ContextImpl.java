@@ -64,4 +64,11 @@ final class ContextImpl<A extends Aggregate> implements CommandContext<A> {
   public <T extends Aggregate> Optional<T> getAggregate(UUID aggregateId) {
     return viewStore == null ? Optional.empty() : viewStore.getSnapshot(meta.realm(), aggregateId);
   }
+
+  @Override
+  public <T extends Aggregate> Optional<T> getAggregate(UUID aggregateId, long version) {
+    return viewStore == null
+        ? Optional.empty()
+        : viewStore.getSnapshot(meta.realm(), aggregateId, version);
+  }
 }

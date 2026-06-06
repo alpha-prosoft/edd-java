@@ -2,6 +2,10 @@
 
 > Event-sourced CQRS for Java with end-to-end compile-time type safety.
 
+> [!TIP]
+> **New to event sourcing or CQRS?** Jump to **[Core concepts](#core-concepts)** for a plain-English
+> walk through event sourcing, CQRS, and aggregates — using one running Order example — then come back.
+
 A Java port of the Clojure [edd-core](https://github.com/alpha-prosoft/edd-core).
 Everything — commands, events, aggregates, queries, deps — is a record.
 Every registration is checked by `javac`.
@@ -32,14 +36,79 @@ flowchart LR
 
 This README reads top to bottom as one story:
 
-1. **[Core concepts](#core-concepts)** — what event sourcing + CQRS mean here, the request lifecycle, and every building block.
-2. **[Getting started](#getting-started--build-the-order-service)** — write an Order service file by file, then dispatch a command.
-3. **[How a dispatch flows](#how-a-dispatch-flows)** — what the framework does between `dispatch` and `CommandResponse`.
-4. **[Going to production](#going-to-production)** — persist to a store, serve over HTTP/2, talk between services, deploy on Lambda.
-5. **[Reference](#concept-reference)** — concept table, edd-core mapping, modules, status.
+1. **[Quick start](#quick-start)** — scaffold a runnable service in one command.
+2. **[Core concepts](#core-concepts)** — what event sourcing + CQRS mean here, the request lifecycle, and every building block.
+3. **[Getting started](#getting-started--build-the-order-service)** — write an Order service file by file, then dispatch a command.
+4. **[How a dispatch flows](#how-a-dispatch-flows)** — what the framework does between `dispatch` and `CommandResponse`.
+5. **[Going to production](#going-to-production)** — persist to a store, serve over HTTP/2, talk between services, deploy on Lambda.
+6. **[Reference](#concept-reference)** — concept table, edd-core mapping, modules, status.
 
-If you just want to see code, skip to [Getting started](#getting-started--build-the-order-service);
-the concepts below are the *why* behind every line of it.
+---
+
+# Quick start
+
+Scaffold a new service with [`template/scaffold.sh`](template/scaffold.sh) — a minimal ping service
+(command → event → aggregate → query) wired to the runtime and stores you pick. You depend on only
+what you choose.
+
+```bash
+# 0. Install edd-java into your local Maven repo once (the generated project depends on it).
+mvn -q -DskipTests install
+
+# 1. Scaffold (defaults: --runtime lambda, --event-store memory, --view-store memory).
+template/scaffold.sh --group com.example --name ping
+
+# ...or choose the runtime and stores explicitly:
+template/scaffold.sh --group com.example --name ping \
+    --runtime undertow --event-store postgres --view-store s3
+
+cd ping-svc
+
+# 2. Build + run the in-memory domain test (no external infra needed).
+mvn package
+```
+
+Options (each optional): `--runtime` = `lambda` (default) · `undertow`; `--event-store` = `memory`
+(default) · `postgres` · `dynamodb`; `--view-store` = `memory` (default) · `postgres` · `s3`.
+
+**Run it.** What `mvn package` produces depends on `--runtime`:
+
+```bash
+# runtime = undertow  ->  a runnable HTTP/2 server
+java -jar target/ping-server.jar              # https://localhost:8443
+
+# runtime = lambda  ->  target/ping-lambda.jar  (deploy on the java25 runtime,
+#   handler com.example.ping.PingLambda::handleRequest). For local debugging,
+#   the generated 'undertow' profile builds a server without touching the lambda build:
+mvn -Pundertow package && java -jar target/ping-server.jar
+```
+
+**Exercise it** (HTTP/2; `/health` also answers over HTTP/1.1):
+
+```bash
+ID=11111111-1111-1111-1111-111111111111
+curl -sk https://localhost:8443/health
+curl -sk --http2 https://localhost:8443/api/command -H 'content-type: application/json' \
+  -d "{\"cmdId\":\"ping\",\"command\":{\"id\":\"$ID\",\"message\":\"hi\"},\"meta\":{}}"
+curl -sk --http2 https://localhost:8443/api/query -H 'content-type: application/json' \
+  -d "{\"queryId\":\"get-ping\",\"query\":{\"id\":\"$ID\"},\"meta\":{}}"
+# -> {"result":{"id":"…","version":1,"lastMessage":"hi","count":1}}
+```
+
+**Point it at a real backend** — no code change; the chosen store reads its settings from config
+(`EDD_*` / `-Dedd.*` / `edd.properties`):
+
+```bash
+# scaffolded with --event-store postgres --view-store postgres:
+EDD_STORE_URL=jdbc:postgresql://localhost:5432/edd EDD_STORE_USER=edd EDD_STORE_PASSWORD=edd \
+  java -jar target/ping-server.jar
+# scaffolded with --event-store dynamodb --view-store s3:
+EDD_STORE_REGION=eu-west-1 EDD_STORE_TABLEPREFIX=ping EDD_STORE_BUCKET=my-aggregates \
+  java -jar target/ping-server.jar
+```
+
+Then read [Core concepts](#core-concepts) for the *why*, or [Getting started](#getting-started--build-the-order-service)
+to build a richer service by hand. See [`template/README.md`](template/README.md) for all scaffolder options.
 
 ---
 
@@ -48,24 +117,95 @@ the concepts below are the *why* behind every line of it.
 New to event sourcing / CQRS, or coming from edd-core? Read this once; the rest of the guide is
 mechanics. Everything here is implemented and tested in this repo — nothing aspirational.
 
+## An order, two ways
+
+Picture one order. A customer **places** it for 3 widgets, the **payment is confirmed**, then they
+change their mind and the order is **cancelled**.
+
+A normal database stores the *current* order. After those three actions the row says
+`status = CANCELLED`. That's all it says. The fact that the order was ever **paid** is gone —
+overwritten the moment the status flipped to cancelled.
+
+Now your finance team asks, a month later:
+
+> *How many cancelled orders had already been paid — i.e. how much did we have to refund?*
+
+With the normal database you **can't answer it** — "paid" was overwritten by "cancelled". You'd have
+had to predict the question in advance and add a column or a side-log for it.
+
+Event sourcing flips this around: instead of storing the order, you store **what happened to it**.
+
 ## Event sourcing in one paragraph
 
-State is **not** stored as rows you overwrite. Every change is an immutable **event** appended to an
-**event store** (the single source of truth). An aggregate's current state is *derived* by replaying
-its events in order — never read from a mutable record. This gives you a complete audit trail, the
-ability to rebuild read models at will, and a natural fit for optimistic concurrency. The trade-off
-is that "the current value" is a fold over history, so the framework does that fold for you on every
-dispatch.
+State is **not** stored as rows you overwrite. Every change is an immutable **event** — a fact, in
+the past tense — appended to an **event store** (the single source of truth). The order above isn't a
+row; it's a list of events:
+
+```
+OrderPlaced(3 widgets, $30)   // happened, and stays true forever
+PaymentConfirmed($30)
+OrderCancelled("changed mind")
+```
+
+Nothing is ever deleted or overwritten — cancelling the order *adds* an `OrderCancelled` event, it
+doesn't erase the `PaymentConfirmed` before it. So the finance question above is now just a matter of
+reading history: *count every `OrderCancelled` that has a `PaymentConfirmed` before it.* The data was
+there all along, because facts are never thrown away. You get a complete audit trail for free, you
+can rebuild any read model at will (even one nobody thought of yet), and it's a natural fit for
+optimistic concurrency. The trade-off: "the current order" is no longer something you read directly —
+it's a fold over history. So the framework replays those events for you on every dispatch to
+reconstruct current state.
+
+## What is an aggregate?
+
+An **aggregate** is the thing those events are *about* — here, one order. It's the consistency
+boundary: a single order is loaded, decided on, and saved as a unit. You never store the aggregate
+directly; its current state is **derived** by replaying its events in order:
+
+```
+(none) ─OrderPlaced─▶ PLACED ─PaymentConfirmed─▶ PAID ─OrderCancelled─▶ CANCELLED
+```
+
+Replay that chain and you get the current order: `status = CANCELLED`, still carrying the $30 total
+and customer it was placed with. Every command operates on a freshly replayed aggregate, so the
+decision is always made against true current state — never a stale row.
 
 ## CQRS in one paragraph
 
-The **C**ommand side (writes) and the **Q**uery side (reads) are different paths with different
-shapes. A **command** is a request to change something; it runs a handler that emits events and
-never returns data. A **query** is a read; it returns data and never changes state. They don't even
-share a store: commands write the event store, queries read a **view store** (a materialized
-projection of aggregates). Separating them lets each scale and be modeled independently.
+Reading and writing pull in opposite directions, so **C**QRS gives them separate paths. The
+**C**ommand side (writes) and the **Q**uery side (reads) have different shapes and don't even share a
+store. A **command** (`PlaceOrder`, `ConfirmPayment`, `CancelOrder`) is a request to change
+something; it runs a handler that emits events and **never returns data**. A **query** (`GetOrder`)
+is a read; it returns data and **never changes state**. Commands append to the event store; queries
+read a **view store** — a ready-to-serve snapshot of each aggregate that the framework updates after
+every successful command. Separating them lets each side scale and be modeled independently: the
+write side stays a tiny, correct decision log, while the read side can be shaped however readers find
+convenient.
+
+### How CQRS helps when the answer travels
+
+Because a command's result is just *events* — plain facts, with no caller waiting on a return value —
+**how** those facts get delivered downstream is decoupled from the handler that produced them. The
+same `PaymentConfirmed` can travel by whatever transport each reader needs:
+
+- **Queue** — drop the event on SQS so the next step runs when it's ready. This is the one edd-java
+  ships today: a `PaymentConfirmed` effect becomes a `ShipOrder` command routed over the queue (the
+  exact effect you'll write in section 9).
+- **WebSocket** — push `PaymentConfirmed` to the customer's open order-tracking page so the status
+  updates live.
+- **File / batch** — append the event to a file the finance job sweeps overnight to answer the
+  "paid then cancelled" refund question above.
+
+The last two aren't built in — they're illustrations of the same idea: a fact, once recorded, can be
+fanned out any number of ways. In a return-value-based design, the writer has to know who's listening
+and block until they answer.
+With CQRS the writer just records *what happened* and moves on; any number of readers — live, queued,
+or batch — pick it up however suits them. That decoupling is the whole point.
 
 ## The building blocks
+
+The walkthrough below builds this **Order** service in full (place → pay → ship → cancel); the table
+names each piece you'll write.
 
 | Concept | What it is | In Java |
 |---|---|---|
