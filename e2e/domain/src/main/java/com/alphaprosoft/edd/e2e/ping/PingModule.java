@@ -51,7 +51,7 @@ public final class PingModule {
                     PingSetValueCommand.builder().id(e.pingTarget()).value(e.value()).build(),
                     PongSetValueCommand.builder().id(e.pongTarget()).value(e.value()).build()))
         .regQuery(
-            PingIds.GET_PING, (ctx, q) -> ctx.<PingAggregate>getAggregate(q.id()).orElse(null))
+            PingIds.GET_PING, (ctx, q) -> ctx.getAggregate(q.id()).orElse(null))
         .build();
   }
 

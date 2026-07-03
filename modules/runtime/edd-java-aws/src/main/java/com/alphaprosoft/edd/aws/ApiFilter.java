@@ -64,7 +64,8 @@ public final class ApiFilter implements IngestFilter {
       }
     } catch (Exception e) {
       status = 500;
-      body = "{\"error\":" + quote(e.getMessage()) + "}";
+      String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+      body = "{\"error\":" + quote(message) + "}";
     }
     return Map.of(
         "statusCode", status,

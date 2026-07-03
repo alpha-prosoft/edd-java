@@ -1,15 +1,13 @@
 package com.alphaprosoft.edd.query;
 
+import com.alphaprosoft.edd.core.IdRegistry;
 import com.alphaprosoft.edd.core.TypeRegistry;
 import java.util.Collection;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class QueryId<Q extends Query, R> {
 
-  private static final Map<String, QueryId<?, ?>> BY_ID = new ConcurrentHashMap<>();
-  private static final Map<Class<?>, QueryId<?, ?>> BY_TYPE = new ConcurrentHashMap<>();
+  private static final IdRegistry<QueryId<?, ?>> REGISTRY = new IdRegistry<>(TypeRegistry.QUERY);
 
   private final String id;
   private final Class<Q> queryType;
@@ -23,21 +21,13 @@ public final class QueryId<Q extends Query, R> {
 
   public static <Q extends Query, R> QueryId<Q, R> of(
       String id, Class<Q> queryType, Class<R> responseType) {
-    QueryId<?, ?> existing = BY_ID.get(id);
-    if (existing != null) {
-      if (!existing.queryType.equals(queryType) || !existing.responseType.equals(responseType)) {
-        throw new IllegalStateException(
-            "QueryId '" + id + "' already registered with different types");
-      }
-      @SuppressWarnings("unchecked")
-      QueryId<Q, R> cast = (QueryId<Q, R>) existing;
-      return cast;
+    QueryId<?, ?> existing =
+        REGISTRY.register(id, queryType, () -> new QueryId<>(id, queryType, responseType));
+    if (!existing.queryType.equals(queryType) || !existing.responseType.equals(responseType)) {
+      throw new IllegalStateException(
+          "QueryId '" + id + "' already registered with different types");
     }
-    QueryId<Q, R> created = new QueryId<>(id, queryType, responseType);
-    BY_ID.put(id, created);
-    BY_TYPE.put(queryType, created);
-    TypeRegistry.register(TypeRegistry.QUERY, id, queryType);
-    return created;
+    return new QueryId<>(id, queryType, responseType);
   }
 
   public String id() {
@@ -53,21 +43,19 @@ public final class QueryId<Q extends Query, R> {
   }
 
   public static Optional<QueryId<?, ?>> lookup(String id) {
-    return Optional.ofNullable(BY_ID.get(id));
+    return Optional.ofNullable(REGISTRY.byId(id));
   }
 
   public static <Q extends Query> QueryId<Q, ?> forType(Class<Q> type) {
-    QueryId<?, ?> found = BY_TYPE.get(type);
+    QueryId<?, ?> found = REGISTRY.byType(type);
     if (found == null) {
       throw new IllegalArgumentException("No QueryId registered for " + type.getName());
     }
-    @SuppressWarnings("unchecked")
-    QueryId<Q, ?> cast = (QueryId<Q, ?>) found;
-    return cast;
+    return new QueryId<>(found.id, type, found.responseType);
   }
 
   public static Collection<QueryId<?, ?>> values() {
-    return BY_ID.values();
+    return REGISTRY.values();
   }
 
   @Override

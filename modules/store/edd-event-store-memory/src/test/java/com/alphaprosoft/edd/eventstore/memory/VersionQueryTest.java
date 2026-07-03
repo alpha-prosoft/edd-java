@@ -67,8 +67,8 @@ class VersionQueryTest {
                     (ctx, q) -> {
                       var agg =
                           q.version() == null
-                              ? ctx.<Doc>getAggregate(q.id())
-                              : ctx.<Doc>getAggregate(q.id(), q.version());
+                              ? ctx.getAggregate(q.id())
+                              : ctx.getAggregate(q.id(), q.version());
                       return agg.map(Doc::val).orElse(null);
                     })
                 .build())

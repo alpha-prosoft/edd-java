@@ -185,7 +185,7 @@ class SchemaBatchRejectionTest {
         responses.stream().allMatch(r -> r instanceof CommandResponse.Success),
         responses.toString());
     Wallet snapshot =
-        app.viewStore().<Wallet>getSnapshot(RequestMeta.DEFAULT_REALM, id).orElseThrow();
+        app.viewStore().getSnapshot(RequestMeta.DEFAULT_REALM, id, Wallet.class).orElseThrow();
     assertEquals(70, snapshot.balance());
     assertEquals(2, app.eventStore().load(RequestMeta.DEFAULT_REALM, id).size());
   }
@@ -205,7 +205,8 @@ class SchemaBatchRejectionTest {
     assertEquals("invalid-state", ((CommandResponse.Failure) responses.get(1)).code());
     assertEquals(
         0, app.eventStore().load(RequestMeta.DEFAULT_REALM, id).size(), "nothing committed");
-    assertTrue(app.viewStore().getSnapshot(RequestMeta.DEFAULT_REALM, id).isEmpty());
+    assertTrue(
+        app.viewStore().getSnapshot(RequestMeta.DEFAULT_REALM, id, Aggregate.class).isEmpty());
   }
 
   @Test
@@ -221,9 +222,15 @@ class SchemaBatchRejectionTest {
     assertTrue(responses.stream().allMatch(r -> r instanceof CommandResponse.Success));
     assertEquals(
         10,
-        app.viewStore().<Wallet>getSnapshot(RequestMeta.DEFAULT_REALM, a).orElseThrow().balance());
+        app.viewStore()
+            .getSnapshot(RequestMeta.DEFAULT_REALM, a, Wallet.class)
+            .orElseThrow()
+            .balance());
     assertEquals(
         20,
-        app.viewStore().<Wallet>getSnapshot(RequestMeta.DEFAULT_REALM, b).orElseThrow().balance());
+        app.viewStore()
+            .getSnapshot(RequestMeta.DEFAULT_REALM, b, Wallet.class)
+            .orElseThrow()
+            .balance());
   }
 }

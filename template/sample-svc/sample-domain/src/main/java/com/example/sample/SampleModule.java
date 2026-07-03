@@ -11,7 +11,7 @@ public final class SampleModule {
         .regApply(SampleIds.CREATED, SampleAggregate::created)
         .regQuery(
             SampleIds.GET,
-            (ctx, query) -> ctx.<SampleAggregate>getAggregate(query.id()).orElse(null))
+            (ctx, query) -> ctx.getAggregate(query.id()).orElse(null))
         .build();
   }
 

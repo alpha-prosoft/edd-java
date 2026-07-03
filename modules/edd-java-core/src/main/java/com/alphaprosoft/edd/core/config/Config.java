@@ -245,13 +245,12 @@ public final class Config {
       return merged.getOrDefault(canon(key), fallback);
     }
 
-    @SuppressWarnings("unchecked")
-    private static void flatten(String prefix, Map<String, ?> source, Map<String, String> into) {
+    private static void flatten(String prefix, Map<?, ?> source, Map<String, String> into) {
       source.forEach(
           (k, v) -> {
-            String key = prefix.isEmpty() ? k : prefix + "." + k;
+            String key = prefix.isEmpty() ? String.valueOf(k) : prefix + "." + k;
             if (v instanceof Map<?, ?> nested) {
-              flatten(key, (Map<String, ?>) nested, into);
+              flatten(key, nested, into);
             } else if (v != null) {
               into.put(canon(key), String.valueOf(v));
             }

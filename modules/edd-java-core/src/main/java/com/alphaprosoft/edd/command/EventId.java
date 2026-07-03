@@ -1,15 +1,13 @@
 package com.alphaprosoft.edd.command;
 
+import com.alphaprosoft.edd.core.IdRegistry;
 import com.alphaprosoft.edd.core.TypeRegistry;
 import java.util.Collection;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class EventId<E extends Event> {
 
-  private static final Map<String, EventId<?>> BY_ID = new ConcurrentHashMap<>();
-  private static final Map<Class<?>, EventId<?>> BY_TYPE = new ConcurrentHashMap<>();
+  private static final IdRegistry<EventId<?>> REGISTRY = new IdRegistry<>(TypeRegistry.EVENT);
 
   private final String id;
   private final Class<E> type;
@@ -20,21 +18,12 @@ public final class EventId<E extends Event> {
   }
 
   public static <E extends Event> EventId<E> of(String id, Class<E> type) {
-    EventId<?> existing = BY_ID.get(id);
-    if (existing != null) {
-      if (!existing.type.equals(type)) {
-        throw new IllegalStateException(
-            "EventId '" + id + "' already registered with type " + existing.type);
-      }
-      @SuppressWarnings("unchecked")
-      EventId<E> cast = (EventId<E>) existing;
-      return cast;
+    EventId<?> existing = REGISTRY.register(id, type, () -> new EventId<>(id, type));
+    if (!existing.type.equals(type)) {
+      throw new IllegalStateException(
+          "EventId '" + id + "' already registered with type " + existing.type);
     }
-    EventId<E> created = new EventId<>(id, type);
-    BY_ID.put(id, created);
-    BY_TYPE.put(type, created);
-    TypeRegistry.register(TypeRegistry.EVENT, id, type);
-    return created;
+    return new EventId<>(id, type);
   }
 
   public String id() {
@@ -46,21 +35,19 @@ public final class EventId<E extends Event> {
   }
 
   public static Optional<EventId<?>> lookup(String id) {
-    return Optional.ofNullable(BY_ID.get(id));
+    return Optional.ofNullable(REGISTRY.byId(id));
   }
 
   public static <E extends Event> EventId<E> forType(Class<E> type) {
-    EventId<?> found = BY_TYPE.get(type);
+    EventId<?> found = REGISTRY.byType(type);
     if (found == null) {
       throw new IllegalArgumentException("No EventId registered for " + type.getName());
     }
-    @SuppressWarnings("unchecked")
-    EventId<E> cast = (EventId<E>) found;
-    return cast;
+    return new EventId<>(found.id, type);
   }
 
   public static Collection<EventId<?>> values() {
-    return BY_ID.values();
+    return REGISTRY.values();
   }
 
   @Override

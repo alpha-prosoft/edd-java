@@ -7,13 +7,18 @@ import com.alphaprosoft.edd.command.Event;
 import com.alphaprosoft.edd.command.EventFxHandler;
 import com.alphaprosoft.edd.command.EventHandler;
 import com.alphaprosoft.edd.command.EventId;
+import com.alphaprosoft.edd.query.AggregateQueryHandler;
+import com.alphaprosoft.edd.query.Dep;
 import com.alphaprosoft.edd.query.Query;
-import com.alphaprosoft.edd.query.QueryHandler;
+import com.alphaprosoft.edd.query.QueryContext;
 import com.alphaprosoft.edd.query.QueryId;
 import com.alphaprosoft.edd.query.QuerySpec;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -81,8 +86,12 @@ public final class Module<A extends Aggregate> {
       return this;
     }
 
-    public <Q extends Query, R> Builder<A> regQuery(QueryId<Q, R> id, QueryHandler<Q, R> handler) {
-      registrations.add(app -> app.regQuery(id, handler));
+    /** The handler's context is bound to this module's aggregate — no type token needed. */
+    public <Q extends Query, R> Builder<A> regQuery(
+        QueryId<Q, R> id, AggregateQueryHandler<Q, R, A> handler) {
+      Class<A> type = aggregateType;
+      registrations.add(
+          app -> app.regQuery(id, (ctx, q) -> handler.handle(new BoundContext<>(ctx, type), q)));
       return this;
     }
 
@@ -94,6 +103,61 @@ public final class Module<A extends Aggregate> {
 
     public Module<A> build() {
       return new Module<>(aggregateType, List.copyOf(registrations));
+    }
+  }
+
+  private record BoundContext<A extends Aggregate>(Context ctx, Class<A> type)
+      implements QueryContext<A> {
+
+    @Override
+    public <T> T getDeps(Dep<?, T> key) {
+      return ctx.getDeps(key);
+    }
+
+    @Override
+    public UUID requestId() {
+      return ctx.requestId();
+    }
+
+    @Override
+    public UUID interactionId() {
+      return ctx.interactionId();
+    }
+
+    @Override
+    public String realm() {
+      return ctx.realm();
+    }
+
+    @Override
+    public User user() {
+      return ctx.user();
+    }
+
+    @Override
+    public Map<String, String> annotations() {
+      return ctx.annotations();
+    }
+
+    @Override
+    public Optional<A> getAggregate(UUID aggregateId) {
+      return ctx.getAggregate(aggregateId, type);
+    }
+
+    @Override
+    public Optional<A> getAggregate(UUID aggregateId, long version) {
+      return ctx.getAggregate(aggregateId, version, type);
+    }
+
+    @Override
+    public <T extends Aggregate> Optional<T> getAggregate(UUID aggregateId, Class<T> other) {
+      return ctx.getAggregate(aggregateId, other);
+    }
+
+    @Override
+    public <T extends Aggregate> Optional<T> getAggregate(
+        UUID aggregateId, long version, Class<T> other) {
+      return ctx.getAggregate(aggregateId, version, other);
     }
   }
 }

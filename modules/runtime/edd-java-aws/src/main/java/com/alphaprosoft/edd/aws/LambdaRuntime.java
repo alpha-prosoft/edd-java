@@ -4,7 +4,6 @@ import com.alphaprosoft.edd.command.Command;
 import com.alphaprosoft.edd.command.CommandResponse;
 import com.alphaprosoft.edd.core.Application;
 import com.alphaprosoft.edd.core.RequestMeta;
-import com.alphaprosoft.edd.query.Query;
 import com.alphaprosoft.edd.query.QueryId;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.IOException;
@@ -94,13 +93,11 @@ public final class LambdaRuntime {
       return filter(new ApiFilter(this::queryViaApp));
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private Object queryViaApp(String queryId, JsonNode query, RequestMeta meta) {
       QueryId<?, ?> id =
           QueryId.lookup(queryId)
               .orElseThrow(() -> new IllegalStateException("Unknown queryId: " + queryId));
-      Query q = (Query) Messages.MAPPER.convertValue(query, id.queryType());
-      return app.query((QueryId) id, q, meta);
+      return app.queryDecoded(id, type -> Messages.MAPPER.convertValue(query, type), meta);
     }
 
     public Builder s3(S3CommandMapper mapper) {

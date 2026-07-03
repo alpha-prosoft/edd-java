@@ -12,12 +12,19 @@ final class ContextImpl<A extends Aggregate> implements CommandContext<A> {
   private final RequestMeta meta;
   private final A aggregate;
   private final ViewStore viewStore;
+  private final Class<A> aggregateType;
 
-  ContextImpl(Map<String, Object> deps, RequestMeta meta, A aggregate, ViewStore viewStore) {
+  ContextImpl(
+      Map<String, Object> deps,
+      RequestMeta meta,
+      A aggregate,
+      ViewStore viewStore,
+      Class<A> aggregateType) {
     this.deps = deps;
     this.meta = meta;
     this.aggregate = aggregate;
     this.viewStore = viewStore;
+    this.aggregateType = aggregateType;
   }
 
   @Override
@@ -25,9 +32,7 @@ final class ContextImpl<A extends Aggregate> implements CommandContext<A> {
     if (!deps.containsKey(key.name())) {
       throw new IllegalStateException("Dep not resolved: " + key.name());
     }
-    @SuppressWarnings("unchecked")
-    T value = (T) deps.get(key.name());
-    return value;
+    return key.queryId().responseType().cast(deps.get(key.name()));
   }
 
   @Override
@@ -61,14 +66,27 @@ final class ContextImpl<A extends Aggregate> implements CommandContext<A> {
   }
 
   @Override
-  public <T extends Aggregate> Optional<T> getAggregate(UUID aggregateId) {
-    return viewStore == null ? Optional.empty() : viewStore.getSnapshot(meta.realm(), aggregateId);
+  public Optional<A> getAggregate(UUID aggregateId) {
+    return getAggregate(aggregateId, aggregateType);
   }
 
   @Override
-  public <T extends Aggregate> Optional<T> getAggregate(UUID aggregateId, long version) {
+  public Optional<A> getAggregate(UUID aggregateId, long version) {
+    return getAggregate(aggregateId, version, aggregateType);
+  }
+
+  @Override
+  public <T extends Aggregate> Optional<T> getAggregate(UUID aggregateId, Class<T> type) {
     return viewStore == null
         ? Optional.empty()
-        : viewStore.getSnapshot(meta.realm(), aggregateId, version);
+        : viewStore.getSnapshot(meta.realm(), aggregateId, type);
+  }
+
+  @Override
+  public <T extends Aggregate> Optional<T> getAggregate(
+      UUID aggregateId, long version, Class<T> type) {
+    return viewStore == null
+        ? Optional.empty()
+        : viewStore.getSnapshot(meta.realm(), aggregateId, version, type);
   }
 }

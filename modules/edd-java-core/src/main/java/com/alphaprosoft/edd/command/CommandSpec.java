@@ -45,10 +45,7 @@ public record CommandSpec<C extends Command, A extends Aggregate>(
   /** Create a fresh handler instance for one dispatch. */
   public CommandHandler<C, A> newHandler() {
     try {
-      @SuppressWarnings("unchecked")
-      Constructor<? extends CommandHandler<C, A>> ctor =
-          (Constructor<? extends CommandHandler<C, A>>) CTOR_CACHE.get(handlerClass);
-      return ctor.newInstance();
+      return handlerClass.cast(CTOR_CACHE.get(handlerClass).newInstance());
     } catch (ReflectiveOperationException e) {
       throw new IllegalStateException("Failed to instantiate " + handlerClass.getName(), e);
     }

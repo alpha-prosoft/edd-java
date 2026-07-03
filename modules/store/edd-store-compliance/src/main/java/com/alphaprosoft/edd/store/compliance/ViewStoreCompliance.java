@@ -60,14 +60,14 @@ public abstract class ViewStoreCompliance {
     UUID id = UUID.randomUUID();
     s.update(REALM, new Counter(id, 1, 10));
     s.update(REALM, new Counter(id, 2, 20));
-    Counter got = s.<Counter>getSnapshot(REALM, id).orElseThrow();
+    Counter got = s.getSnapshot(REALM, id, Counter.class).orElseThrow();
     assertEquals(2, got.version());
     assertEquals(20, got.count());
   }
 
   @Test
   void missingIdIsEmpty() {
-    assertTrue(newStore().getSnapshot(REALM, UUID.randomUUID()).isEmpty());
+    assertTrue(newStore().getSnapshot(REALM, UUID.randomUUID(), Aggregate.class).isEmpty());
   }
 
   @Test
@@ -79,9 +79,9 @@ public abstract class ViewStoreCompliance {
     s.update(REALM, new Counter(a, 1, 1));
     s.update(REALM, new Counter(b, 1, 2));
     s.update(REALM, new Counter(c, 1, 3));
-    assertEquals(1, s.<Counter>getSnapshot(REALM, a).orElseThrow().count());
-    assertEquals(2, s.<Counter>getSnapshot(REALM, b).orElseThrow().count());
-    assertEquals(3, s.<Counter>getSnapshot(REALM, c).orElseThrow().count());
+    assertEquals(1, s.getSnapshot(REALM, a, Counter.class).orElseThrow().count());
+    assertEquals(2, s.getSnapshot(REALM, b, Counter.class).orElseThrow().count());
+    assertEquals(3, s.getSnapshot(REALM, c, Counter.class).orElseThrow().count());
   }
 
   @Test
@@ -91,7 +91,7 @@ public abstract class ViewStoreCompliance {
     for (long v = 1; v <= 5; v++) {
       s.update(REALM, new Counter(id, v, v * 10));
     }
-    Counter latest = s.<Counter>getSnapshot(REALM, id).orElseThrow();
+    Counter latest = s.getSnapshot(REALM, id, Counter.class).orElseThrow();
     assertEquals(5, latest.version());
     assertEquals(50, latest.count());
   }
@@ -104,14 +104,15 @@ public abstract class ViewStoreCompliance {
     UUID id = UUID.randomUUID();
     s.update(REALM, new Counter(id, 1, 10));
     s.update(REALM, new Counter(id, 2, 20));
-    assertEquals(10, s.<Counter>getSnapshot(REALM, id, 1).orElseThrow().count());
-    assertEquals(20, s.<Counter>getSnapshot(REALM, id, 2).orElseThrow().count());
-    assertTrue(s.getSnapshot(REALM, id, 99).isEmpty(), "never-stored version ⇒ empty");
+    assertEquals(10, s.getSnapshot(REALM, id, 1, Counter.class).orElseThrow().count());
+    assertEquals(20, s.getSnapshot(REALM, id, 2, Counter.class).orElseThrow().count());
+    assertTrue(
+        s.getSnapshot(REALM, id, 99, Aggregate.class).isEmpty(), "never-stored version ⇒ empty");
   }
 
   @Test
   void versionForMissingIdIsEmpty() {
-    assertTrue(newStore().getSnapshot(REALM, UUID.randomUUID(), 1).isEmpty());
+    assertTrue(newStore().getSnapshot(REALM, UUID.randomUUID(), 1, Aggregate.class).isEmpty());
   }
 
   @Test
@@ -120,8 +121,9 @@ public abstract class ViewStoreCompliance {
     UUID id = UUID.randomUUID();
     s.update(REALM, new Counter(id, 1, 1));
     s.update(REALM, new Counter(id, 3, 3));
-    assertTrue(s.getSnapshot(REALM, id, 2).isEmpty(), "never-stored version 2 ⇒ empty");
-    assertEquals(3, s.<Counter>getSnapshot(REALM, id).orElseThrow().version());
+    assertTrue(
+        s.getSnapshot(REALM, id, 2, Aggregate.class).isEmpty(), "never-stored version 2 ⇒ empty");
+    assertEquals(3, s.getSnapshot(REALM, id, Counter.class).orElseThrow().version());
   }
 
   @Test
@@ -131,10 +133,10 @@ public abstract class ViewStoreCompliance {
     for (long v = 1; v <= 100; v++) {
       s.update(REALM, new Counter(id, v, v));
     }
-    assertEquals(1, s.<Counter>getSnapshot(REALM, id, 1).orElseThrow().count());
-    assertEquals(50, s.<Counter>getSnapshot(REALM, id, 50).orElseThrow().count());
-    assertEquals(100, s.<Counter>getSnapshot(REALM, id, 100).orElseThrow().count());
-    assertEquals(100, s.<Counter>getSnapshot(REALM, id).orElseThrow().version());
+    assertEquals(1, s.getSnapshot(REALM, id, 1, Counter.class).orElseThrow().count());
+    assertEquals(50, s.getSnapshot(REALM, id, 50, Counter.class).orElseThrow().count());
+    assertEquals(100, s.getSnapshot(REALM, id, 100, Counter.class).orElseThrow().count());
+    assertEquals(100, s.getSnapshot(REALM, id, Counter.class).orElseThrow().version());
   }
 
   @Test
@@ -144,10 +146,10 @@ public abstract class ViewStoreCompliance {
     s.update(REALM, new Doc(id, 1, "v1", List.of(new Item(1, "a")), Map.of("k", "1")));
     s.update(
         REALM, new Doc(id, 2, "v2", List.of(new Item(1, "a"), new Item(2, "b")), Map.of("k", "2")));
-    Doc v1 = s.<Doc>getSnapshot(REALM, id, 1).orElseThrow();
+    Doc v1 = s.getSnapshot(REALM, id, 1, Doc.class).orElseThrow();
     assertEquals("v1", v1.text());
     assertEquals(1, v1.items().size(), "v1 must be unaffected by the v2 update");
-    Doc v2 = s.<Doc>getSnapshot(REALM, id, 2).orElseThrow();
+    Doc v2 = s.getSnapshot(REALM, id, 2, Doc.class).orElseThrow();
     assertEquals("v2", v2.text());
     assertEquals(2, v2.items().size());
   }
@@ -159,7 +161,7 @@ public abstract class ViewStoreCompliance {
     ViewStore s = newStore();
     UUID id = UUID.randomUUID();
     s.update(REALM, new Counter(id, 1, 1));
-    assertEquals(id, s.<Counter>getSnapshot(REALM, id).orElseThrow().id());
+    assertEquals(id, s.getSnapshot(REALM, id, Counter.class).orElseThrow().id());
   }
 
   @Test
@@ -169,7 +171,7 @@ public abstract class ViewStoreCompliance {
     String text =
         "special: @#$%^&*()_+-=[]{}|;':\",./<>?  \n\t  ünïcøde  你好  🎉  \\backslash\\  \"quoted\"";
     s.update(REALM, new Doc(id, 1, text, List.of(), Map.of()));
-    assertEquals(text, s.<Doc>getSnapshot(REALM, id).orElseThrow().text());
+    assertEquals(text, s.getSnapshot(REALM, id, Doc.class).orElseThrow().text());
   }
 
   @Test
@@ -184,7 +186,7 @@ public abstract class ViewStoreCompliance {
             List.of(new Item(1, "alice"), new Item(2, "bob")),
             Map.of("theme", "dark", "lang", "en"));
     s.update(REALM, doc);
-    assertEquals(doc, s.<Doc>getSnapshot(REALM, id).orElseThrow());
+    assertEquals(doc, s.getSnapshot(REALM, id, Doc.class).orElseThrow());
   }
 
   @Test
@@ -196,7 +198,7 @@ public abstract class ViewStoreCompliance {
       items.add(new Item(i, "item-" + i));
     }
     s.update(REALM, new Doc(id, 1, "big", List.copyOf(items), Map.of()));
-    Doc got = s.<Doc>getSnapshot(REALM, id).orElseThrow();
+    Doc got = s.getSnapshot(REALM, id, Doc.class).orElseThrow();
     assertEquals(1000, got.items().size());
     assertEquals(items, got.items());
   }
@@ -206,7 +208,7 @@ public abstract class ViewStoreCompliance {
     ViewStore s = newStore();
     UUID id = UUID.randomUUID();
     s.update(REALM, new Counter(id, 1, 0));
-    Counter got = s.<Counter>getSnapshot(REALM, id).orElseThrow();
+    Counter got = s.getSnapshot(REALM, id, Counter.class).orElseThrow();
     assertEquals(id, got.id());
     assertEquals(1, got.version());
   }
@@ -218,7 +220,7 @@ public abstract class ViewStoreCompliance {
     ViewStore s = newStore();
     UUID id = UUID.randomUUID();
     s.update("a", new Counter(id, 1, 1));
-    assertTrue(s.getSnapshot("b", id).isEmpty());
+    assertTrue(s.getSnapshot("b", id, Aggregate.class).isEmpty());
   }
 
   @Test
@@ -227,10 +229,10 @@ public abstract class ViewStoreCompliance {
     UUID id = UUID.randomUUID();
     s.update("realm-a", new Counter(id, 1, 100));
     s.update("realm-b", new Counter(id, 2, 200));
-    assertEquals(100, s.<Counter>getSnapshot("realm-a", id).orElseThrow().count());
-    assertEquals(1, s.<Counter>getSnapshot("realm-a", id).orElseThrow().version());
-    assertEquals(200, s.<Counter>getSnapshot("realm-b", id).orElseThrow().count());
-    assertEquals(2, s.<Counter>getSnapshot("realm-b", id).orElseThrow().version());
+    assertEquals(100, s.getSnapshot("realm-a", id, Counter.class).orElseThrow().count());
+    assertEquals(1, s.getSnapshot("realm-a", id, Counter.class).orElseThrow().version());
+    assertEquals(200, s.getSnapshot("realm-b", id, Counter.class).orElseThrow().count());
+    assertEquals(2, s.getSnapshot("realm-b", id, Counter.class).orElseThrow().version());
   }
 
   @Test
@@ -244,9 +246,9 @@ public abstract class ViewStoreCompliance {
     b.update(REALM, new Counter(id, 1, 200));
     assertEquals(
         100,
-        a.<Counter>getSnapshot(REALM, id).orElseThrow().count(),
+        a.getSnapshot(REALM, id, Counter.class).orElseThrow().count(),
         "service alpha must not see service beta's aggregate at the same id");
-    assertEquals(200, b.<Counter>getSnapshot(REALM, id).orElseThrow().count());
+    assertEquals(200, b.getSnapshot(REALM, id, Counter.class).orElseThrow().count());
   }
 
   // ---- Strict validation -------------------------------------------------
@@ -267,10 +269,12 @@ public abstract class ViewStoreCompliance {
     UUID id = UUID.randomUUID();
     s.update(REALM, new Counter(id, 1, 1));
     assertThrows(
-        RuntimeException.class, () -> s.getSnapshot(REALM, id, 0), "version 0 query must throw");
+        RuntimeException.class,
+        () -> s.getSnapshot(REALM, id, 0, Aggregate.class),
+        "version 0 query must throw");
     assertThrows(
         RuntimeException.class,
-        () -> s.getSnapshot(REALM, id, -1),
+        () -> s.getSnapshot(REALM, id, -1, Aggregate.class),
         "negative version query must throw");
   }
 }

@@ -36,7 +36,7 @@ public final class PongModule {
                     ? List.of(PingCommand.builder().id(e.id()).hops(e.hops() + 1).build())
                     : List.of())
         .regQuery(
-            PongIds.GET_PONG, (ctx, q) -> ctx.<PongAggregate>getAggregate(q.id()).orElse(null))
+            PongIds.GET_PONG, (ctx, q) -> ctx.getAggregate(q.id()).orElse(null))
         .build();
   }
 

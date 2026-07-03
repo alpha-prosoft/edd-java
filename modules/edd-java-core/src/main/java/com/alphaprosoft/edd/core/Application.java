@@ -27,18 +27,18 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class Application {
 
   private final String serviceName;
-  private final Map<CommandId<?>, CommandSpec<?, ?>> commands;
-  private final Map<EventId<?>, RegisteredEvent<?, ?>> events;
-  private final Map<EventId<?>, List<EventFxHandler<?>>> eventFx;
+  private final Map<Class<?>, CommandSpec<?, ?>> commandsByType;
+  private final Map<Class<?>, RegisteredEvent<?, ?>> eventsByType;
+  private final Map<Class<?>, List<RegisteredFx<?>>> eventFxByType;
   private final Map<QueryId<?, ?>, RegisteredQuery<?, ?>> queries;
-  private final Map<Class<?>, Schema<?>> aggregateSchemas;
+  private final Map<Class<?>, RegisteredQuery<?, ?>> queriesByType;
+  private final Map<Class<?>, Schema<Object>> aggregateSchemas;
   private final Map<QueryId<?, ?>, String> remoteQueryOwners;
   private final EventStore eventStore;
   private final ViewStore viewStore;
@@ -73,10 +73,11 @@ public final class Application {
     for (ModuleFactory factory : b.moduleFactories) {
       factory.create(this, config).applyTo(b);
     }
-    this.commands = Map.copyOf(b.commands);
-    this.events = Map.copyOf(b.events);
-    this.eventFx = Map.copyOf(b.eventFx);
+    this.commandsByType = byType(b.commands, CommandId::type);
+    this.eventsByType = byType(b.events, EventId::type);
+    this.eventFxByType = byFxType(b.eventFx);
     this.queries = Map.copyOf(b.queries);
+    this.queriesByType = byType(b.queries, QueryId::queryType);
     this.aggregateSchemas = Map.copyOf(b.aggregateSchemas);
     this.remoteQueryOwners = Map.copyOf(b.remoteQueryOwners);
     this.remoteClient = b.remoteClient;
@@ -92,6 +93,19 @@ public final class Application {
     this.viewStore =
         b.viewStoreFactory != null ? b.viewStoreFactory.create(this, config) : b.viewStore;
     validateLocalDeps();
+  }
+
+  private static <K, V> Map<Class<?>, V> byType(Map<K, V> source, Function<K, Class<?>> type) {
+    Map<Class<?>, V> out = new LinkedHashMap<>();
+    source.forEach((k, v) -> out.put(type.apply(k), v));
+    return Map.copyOf(out);
+  }
+
+  private static Map<Class<?>, List<RegisteredFx<?>>> byFxType(
+      Map<EventId<?>, List<RegisteredFx<?>>> source) {
+    Map<Class<?>, List<RegisteredFx<?>>> out = new LinkedHashMap<>();
+    source.forEach((id, handlers) -> out.put(id.type(), List.copyOf(handlers)));
+    return Map.copyOf(out);
   }
 
   public EventStore eventStore() {
@@ -132,14 +146,23 @@ public final class Application {
     return dispatchBatch(commands, metas);
   }
 
+  /**
+   * Run a query arriving as an untyped wire payload: {@code decode} receives the id's query type
+   * and returns the bound query instance. Shared entry point for the HTTP and Lambda front ends.
+   */
+  public <Q extends Query, R> R queryDecoded(
+      QueryId<Q, R> id, Function<Class<Q>, Q> decode, RequestMeta meta) {
+    return query(id, decode.apply(id.queryType()), meta);
+  }
+
   public <Q extends Query, R> R query(QueryId<Q, R> id, Q query, RequestMeta meta) {
     Map<String, String> dims = Map.of("service", serviceName, "query", id.id());
     long startNanos = System.nanoTime();
     telemetry.emit("query.received", correlation(meta, "query", id.id()));
     try (Tracer.Span span = tracer.span("edd.query:" + id.id())) {
       try {
-        RegisteredQuery<?, ?> raw = queries.get(id);
-        if (raw == null) {
+        RegisteredQuery<?, ?> reg = queries.get(id);
+        if (reg == null) {
           String owner = remoteQueryOwners.get(id);
           if (owner != null) {
             telemetry.emit("query.routed", correlation(meta, "query", id.id()));
@@ -147,9 +170,7 @@ public final class Application {
           }
           throw new IllegalStateException("No query handler registered for " + id);
         }
-        @SuppressWarnings("unchecked")
-        RegisteredQuery<Q, R> reg = (RegisteredQuery<Q, R>) raw;
-        R result = runQuery(reg, query, meta);
+        R result = id.responseType().cast(runQuery(reg, query, meta));
         telemetry.emit("query.completed", correlation(meta, "query", id.id()));
         return result;
       } catch (RuntimeException e) {
@@ -265,7 +286,7 @@ public final class Application {
       Pending p = processCommand(spec, cmd, meta, cache, pendingEvents, pendingIdentities, touched);
       if (p.failure() != null) {
         // all-or-nothing: nothing has been persisted yet, so simply abort the whole request
-        return abort(metas, i, p.failure());
+        return abort(realm, metas, i, p.failure());
       }
       successes.add(p.success());
     }
@@ -281,6 +302,8 @@ public final class Application {
       return repeat(metas.size(), f);
     }
 
+    // Only the final committed state per aggregate is projected: versions stepped through inside
+    // this transaction (several events or commands on one aggregate) are not stored individually.
     if (viewStore != null) {
       for (UUID id : touched) {
         Aggregate agg = cache.aggregate(realm, id);
@@ -309,8 +332,7 @@ public final class Application {
       List<StoredEvent> pendingEvents,
       List<Identity> pendingIdentities,
       Set<UUID> touched) {
-    @SuppressWarnings("unchecked")
-    C cmd = (C) rawCmd;
+    C cmd = spec.commandId().type().cast(rawCmd);
     String realm = meta.realm();
 
     if (spec.consumes() != null) {
@@ -322,7 +344,8 @@ public final class Application {
     }
 
     Map<String, Object> resolved = new LinkedHashMap<>();
-    ContextImpl<A> depCtx = new ContextImpl<>(resolved, meta, null, viewStore);
+    ContextImpl<A> depCtx =
+        new ContextImpl<>(resolved, meta, null, viewStore, spec.aggregateType());
     resolveDeps(spec.deps(), depCtx, resolved, cmd, meta, cache);
 
     UUID aggregateId = spec.id() != null ? spec.id().apply(depCtx, cmd) : null;
@@ -333,15 +356,17 @@ public final class Application {
 
     A current = loadAggregate(spec.aggregateType(), realm, finalAggregateId, cache);
 
-    if (cmd.version() != null && current != null && cmd.version() != current.version()) {
+    long actualVersion = current == null ? 0 : current.version();
+    if (cmd.version() != null && cmd.version() != actualVersion) {
       telemetry.emit("command.conflict", correlation(meta, "command", spec.commandId().id()));
       return Pending.fail(
           new CommandResponse.Failure(
               "concurrent-modification",
-              Map.of("expected", cmd.version(), "actual", current.version())));
+              Map.of("expected", cmd.version(), "actual", actualVersion)));
     }
 
-    ContextImpl<A> ctx = new ContextImpl<>(resolved, meta, current, viewStore);
+    ContextImpl<A> ctx =
+        new ContextImpl<>(resolved, meta, current, viewStore, spec.aggregateType());
     List<Event> emittedEvents = new ArrayList<>();
     List<Identity> identities = new ArrayList<>();
     List<Rejection> rejections = new ArrayList<>();
@@ -358,9 +383,8 @@ public final class Application {
       return Pending.fail(CommandResponse.rejected(rejections));
     }
 
-    A next = applyAll(current, emittedEvents);
-    @SuppressWarnings("unchecked")
-    Schema<? super A> stateSchema = (Schema<? super A>) aggregateSchemas.get(spec.aggregateType());
+    A next = applyAll(spec.aggregateType(), current, emittedEvents);
+    Schema<Object> stateSchema = aggregateSchemas.get(spec.aggregateType());
     if (stateSchema != null && next != null) {
       List<String> violations = stateSchema.violations(next);
       if (!violations.isEmpty()) {
@@ -393,43 +417,50 @@ public final class Application {
     // effects react to the event with the event's own meta as ctx (meta flows event -> ctx); pure
     // data
     Context fxCtx =
-        new ContextImpl<Aggregate>(Map.of(), eventMeta.toRequestMeta(), null, viewStore);
+        new ContextImpl<>(Map.of(), eventMeta.toRequestMeta(), null, viewStore, Aggregate.class);
     List<Command> effects = runFx(fxCtx, emittedEvents);
     return Pending.ok(
         new CommandResponse.Success(finalAggregateId, emittedEvents, stampedIdentities, effects));
   }
 
   private CommandSpec<?, ?> specFor(Command cmd) {
-    @SuppressWarnings("unchecked")
-    CommandId<? extends Command> cmdId =
-        CommandId.forType((Class<? extends Command>) cmd.getClass());
-    CommandSpec<?, ?> spec = commands.get(cmdId);
+    CommandSpec<?, ?> spec = commandsByType.get(cmd.getClass());
     if (spec == null) {
-      throw new IllegalStateException("No command handler registered for " + cmdId);
+      throw new IllegalStateException(
+          "No command handler registered for " + cmd.getClass().getName());
     }
     return spec;
   }
 
-  @SuppressWarnings("unchecked")
   private <A extends Aggregate> A loadAggregate(
       Class<A> type, String realm, UUID id, RequestCache cache) {
     if (cache.hasAggregate(realm, id)) {
-      return (A) cache.aggregate(realm, id);
+      return type.cast(cache.aggregate(realm, id));
     }
-    return this.<A>replayAggregate(eventStore.load(realm, id));
+    return replayAggregate(type, eventStore.load(realm, id));
   }
 
-  /** A whole-batch failure: report the cause and mark the rest aborted (nothing was persisted). */
+  /**
+   * A whole-batch failure: log each command's terminal failure response so a redelivery replays it
+   * instead of reprocessing, and mark the rest aborted (nothing was persisted). A {@code
+   * concurrent-modification} cause is transient and — like the retry-exhaustion path above —
+   * deliberately not logged, so a redelivery reprocesses against fresh state.
+   */
   private List<CommandResponse> abort(
-      List<RequestMeta> metas, int failedIndex, CommandResponse.Failure cause) {
-    for (RequestMeta m : metas) {
-      telemetry.emit("command.failed", correlation(m, "code", cause.code()));
-    }
-    List<CommandResponse> out = new ArrayList<>(metas.size());
+      String realm, List<RequestMeta> metas, int failedIndex, CommandResponse.Failure cause) {
     CommandResponse.Failure aborted =
         new CommandResponse.Failure("batch-aborted", Map.of("cause", cause.code()));
+    boolean retryable = "concurrent-modification".equals(cause.code());
+    List<CommandResponse> out = new ArrayList<>(metas.size());
     for (int i = 0; i < metas.size(); i++) {
-      out.add(i == failedIndex ? cause : aborted);
+      RequestMeta m = metas.get(i);
+      CommandResponse.Failure resp = i == failedIndex ? cause : aborted;
+      if (retryable) {
+        telemetry.emit("command.failed", correlation(m, "code", resp.code()));
+        out.add(resp);
+      } else {
+        out.add(logged(realm, m, m.breadcrumbs(), resp));
+      }
     }
     return out;
   }
@@ -474,22 +505,26 @@ public final class Application {
     return fields;
   }
 
-  private <A extends Aggregate> A replayAggregate(List<StoredEvent> stored) {
-    return this.<A>applyAll(null, stored.stream().map(StoredEvent::event).toList());
+  private <A extends Aggregate> A replayAggregate(Class<A> type, List<StoredEvent> stored) {
+    return applyAll(type, null, stored.stream().map(StoredEvent::event).toList());
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private <A extends Aggregate> A applyAll(A aggregate, List<? extends Event> events) {
+  private <A extends Aggregate> A applyAll(
+      Class<A> type, A aggregate, List<? extends Event> events) {
     A result = aggregate;
     for (Event event : events) {
-      EventId<?> eid = EventId.forType((Class) event.getClass());
-      RegisteredEvent<?, ?> re = this.events.get(eid);
+      RegisteredEvent<?, ?> re = eventsByType.get(event.getClass());
       if (re != null) {
-        result = (A) ((EventHandler) re.handler()).apply(result, event);
+        result = type.cast(applyEvent(re, result, event));
       }
     }
     long version = (aggregate == null ? 0 : aggregate.version()) + events.size();
-    return VersionStamp.withVersion(result, version);
+    return VersionStamp.withVersion(type, result, version);
+  }
+
+  private <E extends Event, A extends Aggregate> A applyEvent(
+      RegisteredEvent<E, A> re, Aggregate current, Event event) {
+    return re.handler().apply(re.aggregateType().cast(current), re.id().type().cast(event));
   }
 
   /**
@@ -509,22 +544,17 @@ public final class Application {
     }
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private Object resolveDep(
-      DepBinding<?, ?, ?> binding,
-      Context ctx,
-      Object input,
-      RequestMeta meta,
-      RequestCache cache) {
-    Dep<?, ?> dep = binding.key();
-    Query q = (Query) ((BiFunction) binding.queryFn()).apply(ctx, input);
+  private <I, Q extends Query, T> Object resolveDep(
+      DepBinding<I, Q, T> binding, Context ctx, I input, RequestMeta meta, RequestCache cache) {
+    Dep<Q, T> dep = binding.key();
+    Q q = binding.queryFn().apply(ctx, input);
     RequestCache.DepKey key = new RequestCache.DepKey(dep.service(), q);
     if (cache.hasDep(key)) {
       return cache.dep(key);
     }
     Object result =
         (dep.service() != null && !dep.service().equals(serviceName))
-            ? remoteClient.query(dep.service(), (QueryId) dep.queryId(), q, meta)
+            ? remoteClient.query(dep.service(), dep.queryId(), q, meta)
             : queryByType(q, meta);
     cache.putDep(key, result);
     return result;
@@ -533,38 +563,34 @@ public final class Application {
   private List<Command> runFx(Context ctx, List<Event> events) {
     List<Command> all = new ArrayList<>();
     for (Event event : events) {
-      @SuppressWarnings("unchecked")
-      Class<Event> eClass = (Class<Event>) event.getClass();
-      EventId<?> eid = EventId.forType(eClass);
-      List<EventFxHandler<?>> handlers = eventFx.get(eid);
+      List<RegisteredFx<?>> handlers = eventFxByType.get(event.getClass());
       if (handlers == null) {
         continue;
       }
-      for (EventFxHandler<?> handler : handlers) {
-        all.addAll(invokeFx(handler, ctx, event));
+      for (RegisteredFx<?> fx : handlers) {
+        all.addAll(invokeFx(fx, ctx, event));
       }
     }
     return all;
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private List<Command> invokeFx(EventFxHandler<?> handler, Context ctx, Event event) {
-    return ((EventFxHandler) handler).fx(ctx, event);
+  private <E extends Event> List<Command> invokeFx(RegisteredFx<E> fx, Context ctx, Event event) {
+    return fx.handler().fx(ctx, fx.id().type().cast(event));
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
   private Object queryByType(Query q, RequestMeta meta) {
-    QueryId<?, ?> id = QueryId.forType((Class) q.getClass());
-    RegisteredQuery<?, ?> reg = queries.get(id);
+    RegisteredQuery<?, ?> reg = queriesByType.get(q.getClass());
     if (reg == null) {
-      throw new IllegalStateException("No query handler registered for " + id);
+      throw new IllegalStateException("No query handler registered for " + q.getClass().getName());
     }
-    return runQuery((RegisteredQuery) reg, q, meta);
+    return runQuery(reg, q, meta);
   }
 
-  private <Q extends Query, R> R runQuery(RegisteredQuery<Q, R> reg, Q query, RequestMeta meta) {
+  private <Q extends Query, R> R runQuery(
+      RegisteredQuery<Q, R> reg, Query rawQuery, RequestMeta meta) {
+    Q query = reg.id().queryType().cast(rawQuery);
     Map<String, Object> resolved = new LinkedHashMap<>();
-    Context ctx = new ContextImpl<Aggregate>(resolved, meta, null, viewStore);
+    Context ctx = new ContextImpl<>(resolved, meta, null, viewStore, Aggregate.class);
     resolveDeps(reg.deps(), ctx, resolved, query, meta, new RequestCache());
     R result = reg.handler().handle(ctx, query);
     if (reg.produces() != null) {
@@ -578,7 +604,7 @@ public final class Application {
   }
 
   private void validateLocalDeps() {
-    for (CommandSpec<?, ?> spec : commands.values()) {
+    for (CommandSpec<?, ?> spec : commandsByType.values()) {
       for (DepBinding<?, ?, ?> binding : spec.deps()) {
         Dep<?, ?> dep = binding.key();
         if (!dep.isRemote() && !queries.containsKey(dep.queryId())) {
@@ -609,6 +635,8 @@ public final class Application {
   record RegisteredEvent<E extends Event, A extends Aggregate>(
       EventId<E> id, Class<A> aggregateType, EventHandler<E, A> handler) {}
 
+  record RegisteredFx<E extends Event>(EventId<E> id, EventFxHandler<E> handler) {}
+
   record RegisteredQuery<Q extends Query, R>(
       QueryId<Q, R> id,
       QueryHandler<Q, R> handler,
@@ -620,9 +648,9 @@ public final class Application {
     private final String serviceName;
     private final Map<CommandId<?>, CommandSpec<?, ?>> commands = new LinkedHashMap<>();
     private final Map<EventId<?>, RegisteredEvent<?, ?>> events = new LinkedHashMap<>();
-    private final Map<EventId<?>, List<EventFxHandler<?>>> eventFx = new LinkedHashMap<>();
+    private final Map<EventId<?>, List<RegisteredFx<?>>> eventFx = new LinkedHashMap<>();
     private final Map<QueryId<?, ?>, RegisteredQuery<?, ?>> queries = new LinkedHashMap<>();
-    private final Map<Class<?>, Schema<?>> aggregateSchemas = new LinkedHashMap<>();
+    private final Map<Class<?>, Schema<Object>> aggregateSchemas = new LinkedHashMap<>();
     private final Map<QueryId<?, ?>, String> remoteQueryOwners = new LinkedHashMap<>();
     private final List<ModuleFactory> moduleFactories = new ArrayList<>();
     private Config config;
@@ -719,7 +747,7 @@ public final class Application {
     }
 
     public <E extends Event> Builder regFx(EventId<E> id, EventFxHandler<E> handler) {
-      eventFx.computeIfAbsent(id, k -> new ArrayList<>()).add(handler);
+      eventFx.computeIfAbsent(id, k -> new ArrayList<>()).add(new RegisteredFx<>(id, handler));
       return this;
     }
 
@@ -750,7 +778,7 @@ public final class Application {
     /** Validate an aggregate's state after events are applied (edd-core aggregate-state schema). */
     <A extends Aggregate> void registerAggregateSchema(
         Class<A> aggregateType, Schema<? super A> schema) {
-      aggregateSchemas.put(aggregateType, schema);
+      aggregateSchemas.put(aggregateType, state -> schema.violations(aggregateType.cast(state)));
     }
 
     /** Absorb a module built with {@link Module#builder(Class)}. */

@@ -235,7 +235,8 @@ What happens between `app.dispatch(cmd, meta)` and the `CommandResponse`:
 3. **Compute the aggregate id** (the command's `id()`, or a custom `id` function).
 4. **Load + replay** the aggregate: fold its stored events into current state.
 5. **Optimistic-concurrency check**: if the command carries a `version` and it doesn't match the
-   replayed aggregate's version, fail with `concurrent-modification` — nothing is written.
+   replayed aggregate's version (`0` when the aggregate doesn't exist yet), fail with
+   `concurrent-modification` — nothing is written.
 6. **Run the handler** → `List<CommandEmission>`. Any `Rejection` ⇒ fail, discard everything.
 7. **Apply** the new events to get the next aggregate state (and validate it if a state schema is set).
 8. **Persist atomically**: append events + reserve identities in one transaction. A duplicate event
@@ -316,7 +317,7 @@ Two storage roles, each with pluggable backends that all pass one shared complia
 | Role | What it holds | Backends |
 |---|---|---|
 | **Event store** | the immutable event log (source of truth) + command/response logs + identities | in-memory · Postgres · DynamoDB |
-| **View store** | materialized aggregate snapshots for queries (latest + version history) | in-memory · Postgres · S3 |
+| **View store** | materialized aggregate snapshots for queries (latest + version history; one snapshot per transaction, so versions stepped through inside a transaction aren't stored) | in-memory · Postgres · S3 |
 
 Both are realm-scoped. The view store additionally puts the **service** in its key, so services
 sharing one bucket/table never collide; the event store isolates services at the deployment level (a
@@ -720,7 +721,7 @@ public final class OrderModule {
         .regFx(PAYMENT_CONFIRMED, new PaymentConfirmedEffect())
 
         // the order aggregate is owned here, so its read query lives in the module:
-        .regQuery(GET_ORDER, (ctx, q) -> ctx.<OrderAggregate>getAggregate(q.id()).orElse(null))
+        .regQuery(GET_ORDER, (ctx, q) -> ctx.getAggregate(q.id()).orElse(null))
         .build();
   }
 }

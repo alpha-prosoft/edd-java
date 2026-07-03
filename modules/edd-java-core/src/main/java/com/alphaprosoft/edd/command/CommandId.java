@@ -1,15 +1,13 @@
 package com.alphaprosoft.edd.command;
 
+import com.alphaprosoft.edd.core.IdRegistry;
 import com.alphaprosoft.edd.core.TypeRegistry;
 import java.util.Collection;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class CommandId<C extends Command> {
 
-  private static final Map<String, CommandId<?>> BY_ID = new ConcurrentHashMap<>();
-  private static final Map<Class<?>, CommandId<?>> BY_TYPE = new ConcurrentHashMap<>();
+  private static final IdRegistry<CommandId<?>> REGISTRY = new IdRegistry<>(TypeRegistry.COMMAND);
 
   private final String id;
   private final Class<C> type;
@@ -20,21 +18,12 @@ public final class CommandId<C extends Command> {
   }
 
   public static <C extends Command> CommandId<C> of(String id, Class<C> type) {
-    CommandId<?> existing = BY_ID.get(id);
-    if (existing != null) {
-      if (!existing.type.equals(type)) {
-        throw new IllegalStateException(
-            "CommandId '" + id + "' already registered with type " + existing.type);
-      }
-      @SuppressWarnings("unchecked")
-      CommandId<C> cast = (CommandId<C>) existing;
-      return cast;
+    CommandId<?> existing = REGISTRY.register(id, type, () -> new CommandId<>(id, type));
+    if (!existing.type.equals(type)) {
+      throw new IllegalStateException(
+          "CommandId '" + id + "' already registered with type " + existing.type);
     }
-    CommandId<C> created = new CommandId<>(id, type);
-    BY_ID.put(id, created);
-    BY_TYPE.put(type, created);
-    TypeRegistry.register(TypeRegistry.COMMAND, id, type);
-    return created;
+    return new CommandId<>(id, type);
   }
 
   public String id() {
@@ -46,21 +35,19 @@ public final class CommandId<C extends Command> {
   }
 
   public static Optional<CommandId<?>> lookup(String id) {
-    return Optional.ofNullable(BY_ID.get(id));
+    return Optional.ofNullable(REGISTRY.byId(id));
   }
 
   public static <C extends Command> CommandId<C> forType(Class<C> type) {
-    CommandId<?> found = BY_TYPE.get(type);
+    CommandId<?> found = REGISTRY.byType(type);
     if (found == null) {
       throw new IllegalArgumentException("No CommandId registered for " + type.getName());
     }
-    @SuppressWarnings("unchecked")
-    CommandId<C> cast = (CommandId<C>) found;
-    return cast;
+    return new CommandId<>(found.id, type);
   }
 
   public static Collection<CommandId<?>> values() {
-    return BY_ID.values();
+    return REGISTRY.values();
   }
 
   @Override

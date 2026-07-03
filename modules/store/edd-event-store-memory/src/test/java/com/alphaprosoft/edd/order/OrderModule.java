@@ -84,7 +84,7 @@ public final class OrderModule {
         .regApply(ORDER_SHIPPED, OrderAggregate::shipped)
         .regFx(PAYMENT_CONFIRMED, new PaymentConfirmedEffect())
         // the order aggregate is owned here, so its read query lives in the module
-        .regQuery(GET_ORDER, (ctx, q) -> ctx.<OrderAggregate>getAggregate(q.id()).orElse(null))
+        .regQuery(GET_ORDER, (ctx, q) -> ctx.getAggregate(q.id()).orElse(null))
         .build();
   }
 

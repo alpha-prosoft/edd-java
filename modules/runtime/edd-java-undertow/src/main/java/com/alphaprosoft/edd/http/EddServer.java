@@ -5,8 +5,8 @@ import com.alphaprosoft.edd.command.CommandId;
 import com.alphaprosoft.edd.command.CommandResponse;
 import com.alphaprosoft.edd.core.Application;
 import com.alphaprosoft.edd.core.RequestMeta;
-import com.alphaprosoft.edd.query.Query;
 import com.alphaprosoft.edd.query.QueryId;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.undertow.Handlers;
@@ -23,6 +23,7 @@ import io.undertow.util.Methods;
 import io.undertow.util.Protocols;
 import io.undertow.util.StatusCodes;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
@@ -123,7 +124,11 @@ public final class EddServer {
     }
   }
 
-  /** Reads the full JSON body off a worker thread, delegates, writes the JSON reply. */
+  /**
+   * Reads the full JSON body off a worker thread, delegates, writes the JSON reply. Only envelope
+   * problems ({@link BadRequest}: malformed JSON, unknown/missing ids, unbindable payloads, bad
+   * meta) answer 400; anything past parsing — including response serialization — is a 500.
+   */
   private abstract static class JsonHandler implements HttpHandler {
     @Override
     public void handleRequest(HttpServerExchange exchange) throws Exception {
@@ -137,15 +142,66 @@ public final class EddServer {
       try {
         response = handle(exchange, body);
         exchange.setStatusCode(StatusCodes.OK);
+      } catch (BadRequest e) {
+        exchange.setStatusCode(StatusCodes.BAD_REQUEST);
+        response = errorJson(e);
       } catch (Exception e) {
         exchange.setStatusCode(StatusCodes.INTERNAL_SERVER_ERROR);
-        response = Wire.MAPPER.writeValueAsString(Map.of("error", String.valueOf(e.getMessage())));
+        response = errorJson(e);
       }
       exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "application/json");
       exchange.getOutputStream().write(response.getBytes(StandardCharsets.UTF_8));
     }
 
+    private static String errorJson(Exception e) throws JsonProcessingException {
+      String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+      return Wire.MAPPER.writeValueAsString(Map.of("error", message));
+    }
+
     abstract String handle(HttpServerExchange exchange, String body) throws Exception;
+  }
+
+  /** An envelope the client got wrong — the only failures mapped to 400. */
+  private static final class BadRequest extends RuntimeException {
+    BadRequest(String message) {
+      super(message);
+    }
+
+    BadRequest(String message, Throwable cause) {
+      super(message, cause);
+    }
+  }
+
+  private static JsonNode parseBody(String body) {
+    try {
+      return Wire.MAPPER.readTree(body);
+    } catch (JsonProcessingException e) {
+      throw new BadRequest("Malformed JSON: " + e.getOriginalMessage(), e);
+    }
+  }
+
+  private static JsonNode required(JsonNode root, String field) {
+    JsonNode node = root.get(field);
+    if (node == null || node.isNull()) {
+      throw new BadRequest("Missing field: " + field);
+    }
+    return node;
+  }
+
+  private static <T> T bound(JsonNode node, Class<T> type, String field) {
+    try {
+      return Wire.MAPPER.convertValue(node, type);
+    } catch (IllegalArgumentException e) {
+      throw new BadRequest("Invalid " + field + ": " + e.getMessage(), e);
+    }
+  }
+
+  private static RequestMeta parsedMeta(JsonNode root) {
+    try {
+      return Wire.parseMeta(root.get("meta"));
+    } catch (IllegalArgumentException e) {
+      throw new BadRequest("Invalid meta: " + e.getMessage(), e);
+    }
   }
 
   private record CommandHandler(Application app) implements HttpHandler {
@@ -154,13 +210,12 @@ public final class EddServer {
       new JsonHandler() {
         @Override
         String handle(HttpServerExchange ex, String body) throws Exception {
-          JsonNode root = Wire.MAPPER.readTree(body);
-          String cmdId = root.get("cmdId").asText();
+          JsonNode root = parseBody(body);
+          String cmdId = required(root, "cmdId").asText();
           CommandId<?> id =
-              CommandId.lookup(cmdId)
-                  .orElseThrow(() -> new IllegalArgumentException("Unknown cmdId: " + cmdId));
-          Command cmd = (Command) Wire.MAPPER.convertValue(root.get("command"), id.type());
-          RequestMeta meta = Wire.parseMeta(root.get("meta"));
+              CommandId.lookup(cmdId).orElseThrow(() -> new BadRequest("Unknown cmdId: " + cmdId));
+          Command cmd = bound(required(root, "command"), id.type(), "command");
+          RequestMeta meta = parsedMeta(root);
           return Wire.MAPPER.writeValueAsString(responseJson(app.dispatch(cmd, meta)));
         }
       }.handleRequest(exchange);
@@ -169,23 +224,21 @@ public final class EddServer {
 
   private record QueryHandler(Application app) implements HttpHandler {
     @Override
-    @SuppressWarnings({"unchecked", "rawtypes"})
     public void handleRequest(HttpServerExchange exchange) throws Exception {
       new JsonHandler() {
         @Override
         String handle(HttpServerExchange ex, String body) throws Exception {
           JsonNode root =
-              Methods.GET.equals(ex.getRequestMethod())
-                  ? fromQueryString(ex)
-                  : Wire.MAPPER.readTree(body);
-          String queryId = root.get("queryId").asText();
+              Methods.GET.equals(ex.getRequestMethod()) ? fromQueryString(ex) : parseBody(body);
+          String queryId = required(root, "queryId").asText();
           QueryId<?, ?> id =
               QueryId.lookup(queryId)
-                  .orElseThrow(() -> new IllegalArgumentException("Unknown queryId: " + queryId));
-          Query query = (Query) Wire.MAPPER.convertValue(root.get("query"), id.queryType());
-          RequestMeta meta = Wire.parseMeta(root.get("meta"));
-          Object result = app.query((QueryId) id, query, meta);
-          return Wire.MAPPER.writeValueAsString(Map.of("result", result));
+                  .orElseThrow(() -> new BadRequest("Unknown queryId: " + queryId));
+          RequestMeta meta = parsedMeta(root);
+          JsonNode queryNode = required(root, "query");
+          Object result = app.queryDecoded(id, type -> bound(queryNode, type, "query"), meta);
+          // a query may legitimately return null (aggregate not found); Map.of rejects null
+          return Wire.MAPPER.writeValueAsString(Collections.singletonMap("result", result));
         }
       }.handleRequest(exchange);
     }

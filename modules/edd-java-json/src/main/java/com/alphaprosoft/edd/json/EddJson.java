@@ -10,6 +10,7 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -35,6 +36,8 @@ public final class EddJson {
 
   /** Plain mapper for the {@code spec} body — no envelope, just the record's fields. */
   private static final ObjectMapper SPEC = JsonMapper.builder().build();
+
+  private static final TypeReference<Map<String, String>> STRING_MAP = new TypeReference<>() {};
 
   public static final ObjectMapper MAPPER = build();
 
@@ -78,12 +81,11 @@ public final class EddJson {
         base,
         new JsonDeserializer<B>() {
           @Override
-          @SuppressWarnings("unchecked")
           public B deserialize(JsonParser parser, DeserializationContext ctxt) throws IOException {
             JsonNode node = parser.readValueAsTree();
             Class<?> type =
                 TypeRegistry.resolve(node.get("kind").asText(), node.get("name").asText());
-            return (B) SPEC.treeToValue(node.get("spec"), type);
+            return base.cast(SPEC.treeToValue(node.get("spec"), type));
           }
         });
   }
@@ -112,10 +114,9 @@ public final class EddJson {
     }
   }
 
-  @SuppressWarnings("unchecked")
   public static Map<String, String> meta(JsonNode document) {
     JsonNode meta = document.get("meta");
-    return meta == null || meta.isNull() ? Map.of() : MAPPER.convertValue(meta, Map.class);
+    return meta == null || meta.isNull() ? Map.of() : MAPPER.convertValue(meta, STRING_MAP);
   }
 
   /**

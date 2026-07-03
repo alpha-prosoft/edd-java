@@ -58,8 +58,7 @@ final class VersionStamp {
         }
       };
 
-  @SuppressWarnings("unchecked")
-  static <A extends Aggregate> A withVersion(A aggregate, long version) {
+  static <A extends Aggregate> A withVersion(Class<A> type, A aggregate, long version) {
     if (aggregate == null || aggregate.version() == version) {
       return aggregate;
     }
@@ -67,7 +66,7 @@ final class VersionStamp {
     if (rebuilder == null) {
       return aggregate;
     }
-    return (A) rebuilder.rebuild(aggregate, version);
+    return type.cast(rebuilder.rebuild(aggregate, version));
   }
 
   private VersionStamp() {}

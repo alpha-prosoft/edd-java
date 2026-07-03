@@ -133,18 +133,20 @@ public final class PostgresViewStore implements ViewStore {
   }
 
   @Override
-  public <A extends Aggregate> Optional<A> getSnapshot(String realm, UUID aggregateId) {
+  public <A extends Aggregate> Optional<A> getSnapshot(
+      String realm, UUID aggregateId, Class<A> type) {
     return queryOne(
         "SELECT data FROM aggregates WHERE service=? AND realm=? AND aggregate_id=?"
             + " ORDER BY version DESC LIMIT 1",
         realm,
         aggregateId,
-        null);
+        null,
+        type);
   }
 
   @Override
   public <A extends Aggregate> Optional<A> getSnapshot(
-      String realm, UUID aggregateId, long version) {
+      String realm, UUID aggregateId, long version, Class<A> type) {
     if (version <= 0) {
       throw new IllegalArgumentException("version must be positive, was " + version);
     }
@@ -152,12 +154,12 @@ public final class PostgresViewStore implements ViewStore {
         "SELECT data FROM aggregates WHERE service=? AND realm=? AND aggregate_id=? AND version=?",
         realm,
         aggregateId,
-        version);
+        version,
+        type);
   }
 
-  @SuppressWarnings("unchecked")
   private <A extends Aggregate> Optional<A> queryOne(
-      String sql, String realm, UUID aggregateId, Long version) {
+      String sql, String realm, UUID aggregateId, Long version, Class<A> type) {
     try (Connection c = dataSource.getConnection();
         PreparedStatement ps = c.prepareStatement(sql)) {
       ps.setString(1, service);
@@ -168,7 +170,7 @@ public final class PostgresViewStore implements ViewStore {
       }
       try (ResultSet rs = ps.executeQuery()) {
         return rs.next()
-            ? Optional.of((A) EddJson.spec(EddJson.read(rs.getString(1)), Aggregate.class))
+            ? Optional.of(type.cast(EddJson.spec(EddJson.read(rs.getString(1)), Aggregate.class)))
             : Optional.empty();
       }
     } catch (SQLException e) {

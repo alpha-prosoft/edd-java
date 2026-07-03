@@ -25,13 +25,14 @@ class ApplicationStoreFactoryTest {
       public void update(String realm, Aggregate aggregate) {}
 
       @Override
-      public <A extends Aggregate> Optional<A> getSnapshot(String realm, UUID aggregateId) {
+      public <A extends Aggregate> Optional<A> getSnapshot(
+          String realm, UUID aggregateId, Class<A> type) {
         return Optional.empty();
       }
 
       @Override
       public <A extends Aggregate> Optional<A> getSnapshot(
-          String realm, UUID aggregateId, long version) {
+          String realm, UUID aggregateId, long version, Class<A> type) {
         return Optional.empty();
       }
     };

@@ -144,17 +144,18 @@ public final class S3ViewStore implements ViewStore {
   }
 
   @Override
-  public <A extends Aggregate> Optional<A> getSnapshot(String realm, UUID aggregateId) {
-    return read(latestKey(realm, aggregateId));
+  public <A extends Aggregate> Optional<A> getSnapshot(
+      String realm, UUID aggregateId, Class<A> type) {
+    return read(latestKey(realm, aggregateId), type);
   }
 
   @Override
   public <A extends Aggregate> Optional<A> getSnapshot(
-      String realm, UUID aggregateId, long version) {
+      String realm, UUID aggregateId, long version, Class<A> type) {
     if (version <= 0) {
       throw new IllegalArgumentException("version must be positive, was " + version);
     }
-    return read(historyKey(realm, aggregateId, version));
+    return read(historyKey(realm, aggregateId, version), type);
   }
 
   private void put(String key, String json) {
@@ -162,12 +163,10 @@ public final class S3ViewStore implements ViewStore {
         b -> b.bucket(bucket).key(key), RequestBody.fromString(json, StandardCharsets.UTF_8));
   }
 
-  private <A extends Aggregate> Optional<A> read(String key) {
+  private <A extends Aggregate> Optional<A> read(String key, Class<A> type) {
     try {
       String json = s3.getObjectAsBytes(b -> b.bucket(bucket).key(key)).asUtf8String();
-      @SuppressWarnings("unchecked")
-      A aggregate = (A) EddJson.spec(EddJson.read(json), Aggregate.class);
-      return Optional.of(aggregate);
+      return Optional.of(type.cast(EddJson.spec(EddJson.read(json), Aggregate.class)));
     } catch (NoSuchKeyException e) {
       return Optional.empty();
     }

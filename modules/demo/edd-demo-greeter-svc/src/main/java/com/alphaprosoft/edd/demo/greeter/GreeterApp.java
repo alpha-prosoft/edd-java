@@ -28,8 +28,7 @@ public final class GreeterApp {
                             .build())
                 .regApply(GreeterIds.CUSTOMER_GREETED, GreeterAggregate::greeted)
                 .regQuery(
-                    GreeterIds.GET_GREETING,
-                    (ctx, q) -> ctx.<GreeterAggregate>getAggregate(q.id()).orElse(null))
+                    GreeterIds.GET_GREETING, (ctx, q) -> ctx.getAggregate(q.id()).orElse(null))
                 // a query whose dep is resolved from customer-svc over the wire
                 .regQuery(
                     GreeterIds.GET_CUSTOMER_NAME,
